@@ -92,7 +92,7 @@ async def audit(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"AUDIT error for {url}: {str(e)}", exc_info=True)
         await update.message.reply_text(f"❌ Error analyzing {url}:\n{str(e)}")
 
-async def main():
+def main():
     app = Application.builder().token(TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
@@ -100,12 +100,11 @@ async def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, audit))
     
     logger.info("Bot starting...")
-    async with app:
-        await app.run_polling()
+    app.run_polling()
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        main()
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
         sys.exit(0)
