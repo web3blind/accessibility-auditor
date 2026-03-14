@@ -29,7 +29,7 @@ Built for blind and low-vision users.
 
 ## Live Bot
 
-Telegram: @accessibilityAuditAgentBot
+Telegram: https://t.me/accessibilityAuditAgentBot
 
 Usage: /audit https://example.com
 
