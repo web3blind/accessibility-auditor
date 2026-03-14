@@ -23,11 +23,10 @@ class AuditStorage:
         """Generate unique audit ID"""
         return str(uuid4())[:8]
     
-    def save_audit(self, url: str, report: Dict, is_public: bool = False) -> str:
+    def save_audit(self, report: Dict, is_public: bool = False) -> str:
         """
         Save audit report as markdown
         Args:
-            url: website URL
             report: audit report dict
             is_public: whether to show in public audits list
         Returns: audit ID
