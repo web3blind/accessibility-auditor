@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Accessibility Auditor - Combined Telegram Bot + Web API
-Runs both bot and FastAPI server in a single asyncio event loop
+FastAPI server on :3000, Telegram bot polling in separate thread
 """
 
 import asyncio
@@ -16,6 +16,12 @@ from urllib.parse import urlparse
 from auditor import audit_website
 from storage import AuditStorage
 from report_generator import ReportGenerator
+from fastapi import FastAPI
+from fastapi.responses import FileResponse, HTMLResponse
+from pydantic import BaseModel
+from pathlib import Path
+import uvicorn
+import json
 
 # Setup
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -68,7 +74,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ Language declaration\n"
         "✅ Page structure\n"
         "✅ Responsive design\n\n"
-        "Web interface: https://localhost:3000"
+        "Web interface: https://hexdrive.tech"
     )
 
 
@@ -106,9 +112,9 @@ async def audit(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Run audit
         result = await audit_website(url)
         
-        # Save to storage
-        audit_id = storage.save_audit(result)
-        audit_link = f"https://yourdomain.com/audits/{audit_id}"  # Update with actual domain
+        # Save to storage (not public by default)
+        audit_id = storage.save_audit(result, is_public=False)
+        audit_link = f"https://hexdrive.tech/audits/{audit_id}"
         
         # Build report
         score = result.get("score", 0)
@@ -156,7 +162,7 @@ async def audit(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Send link to detailed report
         await update.message.reply_text(
             f"📖 **More details:**\n"
-            f"View full report: {audit_link}"
+            f"More: {audit_link}"
         )
         
         logger.info(f"AUDIT completed for {url} (ID: {audit_id})")
@@ -169,98 +175,113 @@ async def audit(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-async def start_telegram_bot():
-    """Start Telegram bot in async mode"""
-    app = Application.builder().token(TOKEN).build()
+def run_telegram_bot():
+    """Run Telegram bot in blocking mode"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("audit", audit))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, audit))
-    
-    logger.info("Telegram bot initializing...")
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling(
-        allowed_updates=Update.ALL_TYPES,
-        close_loop=False  # Keep loop open for API server
-    )
-    
-    return app
-
-
-def start_api_server():
-    """Start FastAPI server in background thread"""
     try:
-        from fastapi import FastAPI
-        from fastapi.staticfiles import StaticFiles
-        from fastapi.responses import FileResponse, HTMLResponse
-        from pydantic import BaseModel
-        from pathlib import Path
-        import uvicorn
+        app = Application.builder().token(TOKEN).build()
         
-        # Create FastAPI app
-        api_app = FastAPI(title="Accessibility Auditor API")
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("audit", audit))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, audit))
         
-        # Mount static files
-        web_dir = Path("web")
-        if web_dir.exists():
+        logger.info("Telegram bot initializing...")
+        logger.info("Bot polling started")
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
+    except Exception as e:
+        logger.error(f"Telegram bot error: {str(e)}", exc_info=True)
+    finally:
+        loop.close()
+
+
+def create_fastapi_app():
+    """Create and configure FastAPI application"""
+    api_app = FastAPI(title="Accessibility Auditor API")
+    
+    # Define request model
+    class AuditRequestExtended(BaseModel):
+        url: str
+        is_public: bool = False
+    
+    # Serve static files if they exist
+    web_dir = Path("web")
+    if web_dir.exists():
+        try:
+            from fastapi.staticfiles import StaticFiles
             api_app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
+        except:
+            pass
+    
+    # API endpoints
+    @api_app.post("/api/audit")
+    async def create_audit(request: AuditRequestExtended):
+        if not request.url:
+            return {"error": "URL required"}, 400
         
-        # Define models
-        class AuditRequest(BaseModel):
-            url: str
+        url = request.url
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
         
-        # Define extended request model
-        class AuditRequestExtended(BaseModel):
-            url: str
-            is_public: bool = False
+        try:
+            report = await audit_website(url)
+            audit_id = storage.save_audit(report, is_public=request.is_public)
+            return {
+                "audit_id": audit_id,
+                "message": f"Audit completed. View results at /audits/{audit_id}"
+            }
+        except Exception as e:
+            logger.error(f"API audit error: {str(e)}")
+            return {"error": str(e)}, 500
+    
+    @api_app.get("/audits/{audit_id}")
+    async def get_audit_html(audit_id: str):
+        report = storage.get_audit(audit_id)
+        if not report:
+            return HTMLResponse("<h1>404 - Audit not found</h1>", status_code=404)
         
-        # API endpoints
-        @api_app.post("/api/audit")
-        async def create_audit(request: AuditRequestExtended):
-            if not request.url:
-                return {"error": "URL required"}, 400
-            
-            url = request.url
-            if not url.startswith(('http://', 'https://')):
-                url = 'https://' + url
-            
-            try:
-                report = await audit_website(url)
-                audit_id = storage.save_audit(report, is_public=request.is_public)
-                return {
-                    "audit_id": audit_id,
-                    "message": f"Audit completed. View results at /audits/{audit_id}"
-                }
-            except Exception as e:
-                logger.error(f"API audit error: {str(e)}")
-                return {"error": str(e)}, 500
-        
-        @api_app.get("/audits/{audit_id}")
-        async def get_audit_html(audit_id: str):
-            report = storage.get_audit(audit_id)
-            if not report:
-                return HTMLResponse("<h1>404 - Audit not found</h1>", status_code=404)
-            
-            html = report_gen.generate_html(report)
-            return HTMLResponse(content=html)
-        
-        @api_app.get("/")
-        async def serve_root():
-            web_index = Path("web/index.html")
-            if web_index.exists():
-                return FileResponse(str(web_index), media_type="text/html")
-            return HTMLResponse("<h1>Accessibility Auditor</h1><p>Web interface loading...</p>")
-        
-        @api_app.get("/api/audits")
-        async def list_audits(limit: int = 10, public_only: bool = True):
-            return storage.list_audits(limit, public_only=public_only)
-        
-        @api_app.get("/health")
-        async def health_check():
-            return {"status": "ok"}
-        
-        # Run server (only localhost, nginx will proxy from outside)
+        html = report_gen.generate_html(report)
+        return HTMLResponse(content=html)
+    
+    @api_app.get("/")
+    async def serve_root():
+        web_index = Path("web/index.html")
+        if web_index.exists():
+            return FileResponse(str(web_index), media_type="text/html")
+        return HTMLResponse("<h1>Accessibility Auditor</h1><p>Web interface loading...</p>")
+    
+    @api_app.get("/api/audits")
+    async def list_audits(limit: int = 10, public_only: bool = True):
+        return storage.list_audits(limit, public_only=public_only)
+    
+    @api_app.get("/health")
+    async def health_check():
+        return {"status": "ok"}
+    
+    return api_app
+
+
+def main():
+    """Main entry point"""
+    logger.info("=" * 60)
+    logger.info("Accessibility Auditor Bot + API")
+    logger.info("=" * 60)
+    
+    # Create FastAPI app
+    api_app = create_fastapi_app()
+    
+    # Start Telegram bot in separate thread
+    bot_thread = threading.Thread(target=run_telegram_bot, daemon=True)
+    bot_thread.start()
+    logger.info("Telegram bot started in background thread")
+    
+    # Give bot time to initialize
+    import time
+    time.sleep(2)
+    
+    # Start FastAPI server (blocks main thread)
+    try:
         logger.info("Starting FastAPI server on http://127.0.0.1:3000 (localhost only)")
         uvicorn.run(
             api_app,
@@ -268,33 +289,11 @@ def start_api_server():
             port=3000,
             log_level="info"
         )
-        
-    except Exception as e:
-        logger.error(f"API server error: {str(e)}", exc_info=True)
-
-
-def main():
-    """Main entry point - runs bot and API together"""
-    logger.info("=" * 60)
-    logger.info("Accessibility Auditor Bot + API")
-    logger.info("=" * 60)
-    
-    # Start API server in background thread
-    api_thread = threading.Thread(target=start_api_server, daemon=True)
-    api_thread.start()
-    logger.info("API server started in background thread")
-    
-    # Give API time to start
-    asyncio.get_event_loop().run_until_complete(asyncio.sleep(1))
-    
-    # Start Telegram bot (blocks main thread)
-    try:
-        asyncio.get_event_loop().run_until_complete(start_telegram_bot())
     except KeyboardInterrupt:
         logger.info("Shutting down...")
         sys.exit(0)
     except Exception as e:
-        logger.error(f"Fatal error: {str(e)}", exc_info=True)
+        logger.error(f"API server error: {str(e)}", exc_info=True)
         sys.exit(1)
 
 
