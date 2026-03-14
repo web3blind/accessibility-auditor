@@ -3,6 +3,8 @@
 Autonomous AI agent analyzing websites for WCAG 2.1 + GOST compliance.
 Built for blind and low-vision users.
 
+🚀 **[Try the Bot](https://t.me/accessibilityAuditAgentBot)** | 🌐 **[Web Interface](https://hexdrive.tech)**
+
 ## Features
 
 ✅ 12 Automated Accessibility Checks:
