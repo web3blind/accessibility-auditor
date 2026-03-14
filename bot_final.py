@@ -28,7 +28,7 @@ from auditor import audit_website
 from storage import AuditStorage
 from report_generator import ReportGenerator
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -367,13 +367,13 @@ async def root():
                     });
                     
                     const data = await response.json();
-                    if (data.status === 'success') {
-                        window.location.href = data.url;
+                    if (response.ok && data.audit_id) {
+                        window.location.href = '/audits/' + data.audit_id;
                     } else {
-                        alert('Error: ' + data.message);
+                        alert('Error: ' + (data.error || 'Unknown error'));
                     }
                 } catch (e) {
-                    alert('Error submitting audit: ' + e.message);
+                    alert('Error: ' + e.message);
                 }
             }
         </script>
@@ -406,19 +406,23 @@ async def submit_audit(request: AuditRequest):
     url = request.url.strip()
     
     if not is_valid_url(url):
-        return {"status": "error", "message": "Invalid URL format"}, 400
+        return JSONResponse(
+            {"error": "Invalid URL format"},
+            status_code=400
+        )
     
     try:
         result = await audit_website(url)
         audit_id = storage.save_audit(result)
         return {
-            "status": "success",
-            "audit_id": audit_id,
-            "url": f"/audits/{audit_id}"
+            "audit_id": audit_id
         }
     except Exception as e:
         logger.error(f"API audit error: {str(e)}")
-        return {"status": "error", "message": str(e)}, 500
+        return JSONResponse(
+            {"error": str(e)},
+            status_code=500
+        )
 
 
 class UvicornServer(uvicorn.Server):

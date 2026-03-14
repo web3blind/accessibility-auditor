@@ -5,8 +5,6 @@ Built for blind and low-vision users.
 
 🚀 **[Telegram Bot](https://t.me/accessibilityAuditAgentBot)** | 🌐 **[Web Interface](https://hexdrive.tech)**
 
-**Direct Bot Link:** https://t.me/accessibilityAuditAgentBot
-
 ## Features
 
 ✅ 12 Automated Accessibility Checks:
