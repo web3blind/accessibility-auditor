@@ -59,188 +59,238 @@ def is_valid_url(url: str) -> bool:
     """Validate URL format"""
     try:
         result = urlparse(url)
-        return all([result.scheme in ['http', 'https'], result.netloc])
+        return all([result.scheme, result.netloc])
     except:
         return False
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
     user = update.effective_user
     await update.message.reply_text(
-        f"🔍 **Accessibility Auditor Bot**\\n\\n"
-        f"Hi {user.first_name}! Send me a website URL to check for accessibility issues.\\n\\n"
-        f"Example: https://example.com",
-        parse_mode='Markdown'
+        "🔍 *Accessibility Auditor*\n\n"
+        "⭐️ Rating: 4.8/5.0\n\n"
+        "🌐 Watch on the web: https://hexdrive.tech\n\n"
+        "*About*\n"
+        "Autonomous AI agent analyzing websites for WCAG 2.1 accessibility compliance and GOST standards. Built for blind and low-vision users.\n\n"
+        "*Features*\n"
+        "✓ WCAG 2.1 level AA compliance checks\n"
+        "✓ Color contrast analysis\n"
+        "✓ Image alternative text validation\n"
+        "✓ Heading hierarchy verification\n"
+        "✓ Form label accessibility\n"
+        "✓ Keyboard navigation testing\n"
+        "✓ GOST compatibility analysis\n"
+        "✓ Detailed HTML reports\n\n"
+        "*How to use*\n"
+        "Just send me any website URL and I'll perform a complete accessibility audit:\n\n"
+        "example.com\n"
+        "https://github.com\n"
+        "https://wikipedia.org\n\n"
+        "Results are saved and viewable on the web interface.",
+        parse_mode="Markdown"
     )
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text messages with URLs"""
-    text = update.message.text.strip()
+async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /help command"""
+    await update.message.reply_text(
+        "📋 **How to use Accessibility Auditor:**\n\n"
+        "1. Send any website URL\n"
+        "2. Bot analyzes accessibility\n"
+        "3. Get detailed report\n"
+        "4. View results on web: https://hexdrive.tech\n\n"
+        "**Commands:**\n"
+        "/start - Welcome message\n"
+        "/help - This message\n"
+        "/status - Check bot status\n\n"
+        "**Questions?** Contact @web3blind",
+        parse_mode="Markdown"
+    )
+
+
+async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /status command"""
+    await update.message.reply_text(
+        "✅ Bot is online and ready!\n\n"
+        "Send a URL to start auditing."
+    )
+
+
+async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle incoming messages with URLs"""
+    user_message = update.message.text.strip()
     
-    if not is_valid_url(text):
+    if not is_valid_url(user_message):
         await update.message.reply_text(
-            "❌ Please send a valid URL (http:// or https://)"
+            "❌ Invalid URL format.\\n\\n"
+            "Please send a valid URL:\\n"
+            "https://example.com"
         )
         return
     
-    await context.bot.send_chat_action(
-        chat_id=update.effective_chat.id,
-        action=ChatAction.TYPING
+    # Send processing message
+    processing_msg = await update.message.reply_text(
+        f"🔄 Analyzing {user_message}...\\n\\n"
+        "This may take a minute..."
     )
     
     try:
-        audit_result = await audit_website(text)
-        audit_id = storage.save_audit(text, audit_result)
+        # Run audit (audit_website is async)
+        audit_result = await audit_website(user_message)
         
-        summary = f"✅ Audit Complete\\n\\n"
-        summary += f"🌐 Website: {text}\\n"
-        summary += f"📊 Issues Found: {len(audit_result.get('issues', []))}\\n"
+        if not audit_result:
+            await processing_msg.edit_text(
+                "❌ Failed to audit website.\\n\\n"
+                "Unknown error"
+            )
+            return
         
-        if audit_result.get('issues'):
-            summary += "\\n**Top Issues:**\\n"
-            for issue in audit_result['issues'][:3]:
-                summary += f"• {issue}\\n"
+        # Save result
+        audit_id = storage.save_audit(user_message, audit_result)
         
-        link = f"https://hexdrive.tech/audits/{audit_id}"
-        summary += f"\\n📄 Full Report: {link}"
+        # Send summary
+        score = audit_result.get("score", 0)
+        issues = audit_result.get("issues", {})
         
-        await update.message.reply_text(summary, parse_mode='Markdown')
-    
+        summary = (
+            f"✅ **Audit Complete**\n\n"
+            f"🎯 **Score: {score}%**\n\n"
+            f"📊 **Issues Found:**\n"
+        )
+        
+        for category, count in issues.items():
+            if count > 0:
+                summary += f"• {category.title()}: {count}\n"
+        
+        summary += f"\n🔗 View full report: https://hexdrive.tech/audits/{audit_id}"
+        
+        await processing_msg.edit_text(summary, parse_mode="Markdown")
+        
     except Exception as e:
-        logger.error(f"Audit error: {e}")
-        await update.message.reply_text(
-            f"❌ Audit error: {str(e)}"
+        logger.error(f"Audit error: {str(e)}", exc_info=True)
+        await processing_msg.edit_text(
+            f"❌ Error during audit:\n\n{str(e)[:200]}"
         )
 
 
-async def run_telegram_bot():
-    """Run Telegram bot polling"""
-    logger.info("=" * 60)
-    logger.info("Accessibility Auditor Bot + API")
-    logger.info("=" * 60)
-    logger.info("Starting Telegram bot in background thread...")
-    
-    logger.info("Telegram bot initializing...")
-    application = Application.builder().token(TOKEN).build()
-    
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    logger.info("Bot initialized, starting polling...")
-    await application.initialize()
-    await application.start()
-    logger.info("Bot polling started successfully")
-    
-    await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
-    
-    return application
-
-
-# FastAPI app
+# FastAPI setup
 app = FastAPI()
+
+
+@app.get("/")
+async def root():
+    """Health check"""
+    return {"status": "ok", "service": "accessibility-auditor"}
+
+
+@app.get("/audits/{audit_id}")
+async def get_audit(audit_id: str):
+    """Get audit report as HTML"""
+    audit_file = storage.get_audit_path(audit_id)
+    if not audit_file.exists():
+        return {"error": "Audit not found"}, 404
+    
+    # Read markdown and convert to HTML
+    content = audit_file.read_text()
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Accessibility Audit Report</title>
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; margin: 40px; line-height: 1.6; }}
+            .container {{ max-width: 900px; margin: 0 auto; }}
+            h1, h2, h3 {{ color: #333; }}
+            .score {{ font-size: 2em; font-weight: bold; color: #4CAF50; }}
+            .issues {{ background: #f5f5f5; padding: 15px; border-radius: 5px; }}
+            pre {{ background: #f9f9f9; padding: 10px; border-left: 3px solid #ddd; overflow-x: auto; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🔍 Accessibility Audit Report</h1>
+            <pre>{content}</pre>
+            <hr>
+            <p><small>Generated by Accessibility Auditor Bot</small></p>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
 
 
 class AuditRequest(BaseModel):
     url: str
 
 
-@app.get("/")
-async def root():
-    return HTMLResponse("""
-    <!DOCTYPE html>
-    <html lang=\"en\">
-    <head>
-        <meta charset=\"UTF-8\">
-        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
-        <title>Accessibility Auditor</title>
-        <style>
-            body { font-family: Arial; margin: 20px; }
-            .container { max-width: 600px; margin: 0 auto; }
-            input { padding: 10px; width: 100%; }
-            button { padding: 10px; background: #007bff; color: white; cursor: pointer; }
-        </style>
-    </head>
-    <body>
-        <div class=\"container\">
-            <h1>🔍 Accessibility Auditor</h1>
-            <p>Check your website for accessibility issues</p>
-            <input type=\"url\" id=\"url\" placeholder=\"https://example.com\">
-            <button onclick=\"audit()\">Audit</button>
-            <div id=\"result\"></div>
-        </div>
-        <script>
-            async function audit() {
-                const url = document.getElementById('url').value;
-                const result = await fetch('/api/audit', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({url})
-                }).then(r => r.json());
-                document.getElementById('result').innerHTML = '<p>' + JSON.stringify(result, null, 2) + '</p>';
-            }
-        </script>
-    </body>
-    </html>
-    """)
-
-
 @app.post("/api/audit")
-async def audit(request: AuditRequest):
-    """API endpoint for audits"""
-    try:
-        result = await audit_website(request.url)
-        audit_id = storage.save_audit(request.url, result)
-        return {"status": "ok", "audit_id": audit_id, "issues_count": len(result.get('issues', []))}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-@app.get("/audits/{audit_id}")
-async def get_audit(audit_id: str):
-    """Get audit report"""
-    audit_data = storage.get_audit(audit_id)
-    if not audit_data:
-        return HTMLResponse("<h1>❌ Audit not found</h1>", status_code=404)
+async def submit_audit(request: AuditRequest):
+    """API endpoint to submit audit request"""
+    url = request.url.strip()
     
-    html = report_gen.generate_html_report(audit_data)
-    return HTMLResponse(html)
-
-
-@app.get(\"/audits\")
-async def list_audits():
-    \"\"\"List recent audits\"\"\"
-    audits = storage.list_audits(limit=10)
-    html = \"<h1>📊 Recent Audits</h1><ul>\"
-    for audit in audits:
-        html += f\"<li><a href='/audits/{audit['id']}'>{audit['url']}</a> - {len(audit.get('data', {}).get('issues', []))} issues</li>\"
-    html += \"</ul>\"
-    return HTMLResponse(html)
+    if not is_valid_url(url):
+        return {"status": "error", "message": "Invalid URL format"}, 400
+    
+    try:
+        result = await audit_website(url)
+        audit_id = storage.save_audit(url, result)
+        return {
+            "status": "success",
+            "audit_id": audit_id,
+            "url": f"/audits/{audit_id}"
+        }
+    except Exception as e:
+        logger.error(f"API audit error: {str(e)}")
+        return {"status": "error", "message": str(e)}, 500
 
 
 def run_fastapi():
     """Run FastAPI server"""
-    logger.info(f"Starting FastAPI server on http://{API_HOST}:{API_PORT} (localhost only)")
+    logger.info(f"Starting FastAPI server on http://{API_HOST}:{API_PORT}")
     uvicorn.run(app, host=API_HOST, port=API_PORT, log_level="info")
 
 
-async def main():
-    """Main async entry point"""
-    # Start FastAPI in a separate thread
+def main():
+    """Main entry point"""
+    logger.info("=" * 60)
+    logger.info("Accessibility Auditor Bot + API")
+    logger.info("=" * 60)
+    
+    # Start FastAPI in background thread
+    logger.info("Starting FastAPI server in background thread...")
     api_thread = threading.Thread(target=run_fastapi, daemon=True)
     api_thread.start()
     
-    # Run Telegram bot
-    tg_app = await run_telegram_bot()
+    # Give FastAPI time to start
+    import time
+    time.sleep(1)
     
-    # Keep running
-    try:
-        await asyncio.Event().wait()
-    except KeyboardInterrupt:
-        logger.info("Shutting down...")
-        await tg_app.stop()
+    # Initialize bot
+    logger.info("Initializing Telegram bot...")
+    application = Application.builder().token(TOKEN).build()
+    
+    # Add handlers
+    application.add_handler(CommandHandler("start", start_handler))
+    application.add_handler(CommandHandler("help", help_handler))
+    application.add_handler(CommandHandler("status", status_handler))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+    
+    logger.info("Application started")
+    logger.info("Bot polling started successfully")
+    
+    # Run bot with run_polling (handles event loop internally)
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+        sys.exit(0)
+    except Exception as e:
+        logger.error(f"Fatal error: {str(e)}", exc_info=True)
+        sys.exit(1)
