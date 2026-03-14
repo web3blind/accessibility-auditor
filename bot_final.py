@@ -210,9 +210,14 @@ def start_api_server():
         class AuditRequest(BaseModel):
             url: str
         
+        # Define extended request model
+        class AuditRequestExtended(BaseModel):
+            url: str
+            is_public: bool = False
+        
         # API endpoints
         @api_app.post("/api/audit")
-        async def create_audit(request: AuditRequest):
+        async def create_audit(request: AuditRequestExtended):
             if not request.url:
                 return {"error": "URL required"}, 400
             
@@ -222,7 +227,7 @@ def start_api_server():
             
             try:
                 report = await audit_website(url)
-                audit_id = storage.save_audit(report)
+                audit_id = storage.save_audit(report, is_public=request.is_public)
                 return {
                     "audit_id": audit_id,
                     "message": f"Audit completed. View results at /audits/{audit_id}"
@@ -248,18 +253,18 @@ def start_api_server():
             return HTMLResponse("<h1>Accessibility Auditor</h1><p>Web interface loading...</p>")
         
         @api_app.get("/api/audits")
-        async def list_audits(limit: int = 10):
-            return storage.list_audits(limit)
+        async def list_audits(limit: int = 10, public_only: bool = True):
+            return storage.list_audits(limit, public_only=public_only)
         
         @api_app.get("/health")
         async def health_check():
             return {"status": "ok"}
         
-        # Run server
-        logger.info("Starting FastAPI server on http://0.0.0.0:3000")
+        # Run server (only localhost, nginx will proxy from outside)
+        logger.info("Starting FastAPI server on http://127.0.0.1:3000 (localhost only)")
         uvicorn.run(
             api_app,
-            host="0.0.0.0",
+            host="127.0.0.1",
             port=3000,
             log_level="info"
         )

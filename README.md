@@ -120,6 +120,32 @@ Each audit generates:
 2. **HTML report** - Beautiful interactive page
 3. **Markdown report** - Readable text format
 
+## Deployment
+
+### Quick Start (Self-hosted)
+
+See **DEPLOYMENT.md** for full instructions.
+
+**TL;DR:**
+```bash
+# 1. nginx + Let's Encrypt
+sudo cp nginx.conf /etc/nginx/sites-available/hexdrive.tech
+sudo certbot certonly --nginx -d hexdrive.tech
+
+# 2. Run bot
+source venv/bin/activate
+nohup python3 bot_final.py >> bot.log 2>&1 &
+
+# 3. Keep-alive cronjob
+chmod +x keep-alive.sh
+crontab -e  # Add: */1 * * * * ~/.hermes/agents/accessibility-auditor/keep-alive.sh
+```
+
+Then:
+1. Point hexdrive.tech DNS to your server IP
+2. Visit https://hexdrive.tech
+3. Test bot: `/audit https://example.com`
+
 ## Built With
 
 @NousResearch Hermes Agent Framework

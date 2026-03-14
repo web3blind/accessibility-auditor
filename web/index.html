@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Accessibility Auditor</title>
+    <title>Accessibility Auditor - WCAG 2.1 Compliance Check</title>
     <style>
         * {
             margin: 0;
@@ -17,35 +17,74 @@
             color: #333;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             padding: 20px;
         }
         
-        .container {
+        .wrapper {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        .header-section {
             background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            border-radius: 12px 12px 0 0;
             padding: 40px;
-            max-width: 600px;
-            width: 100%;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
         }
         
         .logo {
-            text-align: center;
-            margin-bottom: 30px;
+            font-size: 3em;
+            margin-bottom: 15px;
         }
         
-        .logo h1 {
-            font-size: 2.5em;
+        .header-section h1 {
             color: #667eea;
+            font-size: 2.2em;
             margin-bottom: 10px;
         }
         
-        .logo p {
-            color: #666;
+        .tagline {
+            color: #999;
             font-size: 1.1em;
+            margin-bottom: 20px;
+        }
+        
+        .description {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: left;
+            margin: 20px 0 0 0;
+            color: #555;
+            line-height: 1.8;
+        }
+        
+        .description h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        
+        .description ul {
+            margin-left: 20px;
+            margin-top: 10px;
+        }
+        
+        .description li {
+            margin-bottom: 8px;
+        }
+        
+        .form-section {
+            background: white;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+        
+        .form-section h2 {
+            color: #333;
+            margin-bottom: 25px;
+            font-size: 1.5em;
         }
         
         .form-group {
@@ -76,6 +115,37 @@
             outline: none;
             border-color: #667eea;
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: #667eea;
+        }
+        
+        .checkbox-group label {
+            margin: 0;
+            font-weight: 500;
+            cursor: pointer;
+            flex: 1;
+        }
+        
+        .checkbox-help {
+            font-size: 0.85em;
+            color: #999;
+            margin-top: 5px;
+            margin-left: 30px;
         }
         
         .button-group {
@@ -122,27 +192,6 @@
         
         .btn-secondary:hover {
             background: #e0e0e0;
-        }
-        
-        .examples {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 6px;
-            margin-top: 20px;
-            font-size: 0.9em;
-        }
-        
-        .examples p {
-            margin-bottom: 8px;
-            color: #666;
-        }
-        
-        .examples code {
-            background: white;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: monospace;
-            color: #667eea;
         }
         
         .status {
@@ -198,32 +247,88 @@
             to { transform: rotate(360deg); }
         }
         
+        .examples {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 20px;
+            font-size: 0.9em;
+        }
+        
+        .examples p {
+            margin-bottom: 8px;
+            color: #666;
+        }
+        
+        .examples code {
+            background: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            color: #667eea;
+        }
+        
+        .footer-section {
+            background: white;
+            border-radius: 0 0 12px 12px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            margin-bottom: 40px;
+        }
+        
+        .footer-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        
+        .description-full {
+            color: #555;
+            line-height: 1.8;
+        }
+        
+        .description-full p {
+            margin-bottom: 15px;
+        }
+        
+        .description-full ul {
+            margin-left: 20px;
+            margin: 10px 0 15px 20px;
+        }
+        
+        .description-full li {
+            margin-bottom: 8px;
+        }
+        
         .recent-audits {
             margin-top: 30px;
-            padding-top: 30px;
-            border-top: 2px solid #e9ecef;
         }
         
         .recent-audits h3 {
-            margin-bottom: 15px;
             color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .audit-list {
+            display: grid;
+            gap: 10px;
         }
         
         .audit-item {
             background: #f8f9fa;
-            padding: 12px;
+            padding: 15px;
             border-radius: 6px;
-            margin-bottom: 10px;
-            cursor: pointer;
-            transition: all 0.3s;
             text-decoration: none;
             color: inherit;
             display: block;
+            transition: all 0.3s;
+            border-left: 4px solid #667eea;
         }
         
         .audit-item:hover {
             background: #e9ecef;
             transform: translateX(5px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
         
         .audit-item-url {
@@ -231,22 +336,34 @@
             color: #667eea;
             word-break: break-all;
             font-size: 0.95em;
+            margin-bottom: 5px;
+        }
+        
+        .audit-item-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85em;
         }
         
         .audit-item-score {
             display: inline-block;
-            margin-top: 5px;
             padding: 3px 10px;
             border-radius: 12px;
-            font-size: 0.85em;
             font-weight: 600;
             background: white;
             color: #667eea;
         }
         
         .audit-item-time {
-            font-size: 0.85em;
             color: #999;
+        }
+        
+        .no-audits {
+            color: #999;
+            font-style: italic;
+            padding: 20px;
+            text-align: center;
         }
         
         /* Accessibility */
@@ -285,16 +402,22 @@
         }
         
         @media (max-width: 600px) {
-            .container {
+            .header-section,
+            .form-section,
+            .footer-section {
                 padding: 20px;
             }
             
-            .logo h1 {
-                font-size: 2em;
+            .header-section h1 {
+                font-size: 1.8em;
             }
             
             .button-group {
                 flex-direction: column;
+            }
+            
+            .logo {
+                font-size: 2em;
             }
         }
     </style>
@@ -302,14 +425,29 @@
 <body>
     <a href="#main" class="skip-link">Skip to main content</a>
     
-    <div class="container">
-        <div class="logo">
-            <h1>♿</h1>
-            <h2 style="font-size: 1.8em; margin-bottom: 5px;">Accessibility Auditor</h2>
-            <p>Check your website for accessibility issues</p>
+    <div class="wrapper">
+        <!-- Header with brief description -->
+        <div class="header-section">
+            <div class="logo">♿</div>
+            <h1>Accessibility Auditor</h1>
+            <p class="tagline">Check your website for WCAG 2.1 & GOST compliance</p>
+            
+            <div class="description">
+                <h3>What We Check</h3>
+                <ul>
+                    <li>Semantic HTML structure</li>
+                    <li>Image alt text & media captions</li>
+                    <li>Link quality & keyboard navigation</li>
+                    <li>Heading hierarchy & ARIA attributes</li>
+                    <li>Form accessibility & contrast ratios</li>
+                    <li>Responsive design & language declaration</li>
+                </ul>
+            </div>
         </div>
         
-        <main id="main">
+        <!-- Main form -->
+        <div class="form-section">
+            <h2>Audit Your Website</h2>
             <form id="auditForm">
                 <div class="form-group">
                     <label for="urlInput">Website URL</label>
@@ -324,6 +462,19 @@
                     <div id="urlHelp" class="sr-only">
                         Enter the URL of the website you want to audit. Start with https:// or http://
                     </div>
+                </div>
+                
+                <div class="checkbox-group">
+                    <input 
+                        type="checkbox" 
+                        id="publicCheck" 
+                        name="is_public"
+                        aria-describedby="publicHelp"
+                    >
+                    <label for="publicCheck">Allow public display</label>
+                </div>
+                <div id="publicHelp" class="checkbox-help">
+                    Share your audit results in our public gallery (optional)
                 </div>
                 
                 <div class="button-group">
@@ -342,35 +493,62 @@
             </form>
             
             <div class="examples">
-                <p><strong>Examples to try:</strong></p>
+                <p><strong>Examples:</strong> <code>example.com</code> or <code>https://google.com</code></p>
+            </div>
+        </div>
+        
+        <!-- Detailed description & public audits -->
+        <div class="footer-section">
+            <h2>How It Works</h2>
+            <div class="description-full">
                 <p>
-                    <code>example.com</code> or <code>https://google.com</code>
+                    Our automated auditor analyzes your website against WCAG 2.1 (Web Content Accessibility Guidelines) 
+                    and GOST R 52872-2019 (Russian Accessibility Standard) to identify accessibility issues.
+                </p>
+                <p>
+                    <strong>What makes this tool special:</strong>
+                </p>
+                <ul>
+                    <li><strong>12 Comprehensive Checks</strong> - Validates semantic HTML, images, links, headings, forms, keyboard navigation, ARIA, media, contrast, language, structure, and responsive design</li>
+                    <li><strong>Real-time Analysis</strong> - Fetches and parses your website instantly</li>
+                    <li><strong>Beautiful Reports</strong> - Get detailed, actionable recommendations with a numerical score</li>
+                    <li><strong>Share Results</strong> - Mark "Allow public display" to showcase your accessibility improvements</li>
+                    <li><strong>Built for Everyone</strong> - Fully accessible interface (screenreader-friendly, keyboard-navigable)</li>
+                </ul>
+                <p>
+                    Whether you're a developer making your site more accessible, or someone checking compliance, 
+                    this tool provides the insights you need to improve user experience for everyone.
                 </p>
             </div>
             
-            <div id="recentContainer" class="recent-audits" style="display: none;">
-                <h3>Recent Audits</h3>
-                <div id="recentList"></div>
+            <!-- Public audits list -->
+            <div class="recent-audits" id="publicAuditsContainer" style="display: none;">
+                <h3>Recent Public Audits</h3>
+                <p style="color: #999; margin-bottom: 15px; font-size: 0.95em;">Examples of websites audited by our community</p>
+                <div class="audit-list" id="auditList"></div>
             </div>
-        </main>
+        </div>
     </div>
     
     <script>
         const form = document.getElementById('auditForm');
         const urlInput = document.getElementById('urlInput');
+        const publicCheck = document.getElementById('publicCheck');
         const submitBtn = document.getElementById('submitBtn');
         const status = document.getElementById('status');
         const statusText = document.getElementById('statusText');
-        const recentContainer = document.getElementById('recentContainer');
-        const recentList = document.getElementById('recentList');
+        const publicAuditsContainer = document.getElementById('publicAuditsContainer');
+        const auditList = document.getElementById('auditList');
         
-        // Load recent audits on page load
-        loadRecentAudits();
+        // Load public audits on page load
+        loadPublicAudits();
         
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const url = urlInput.value.trim();
+            const isPublic = publicCheck.checked;
+            
             if (!url) {
                 showStatus('Please enter a URL', 'error');
                 return;
@@ -385,11 +563,12 @@
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ url })
+                    body: JSON.stringify({ url, is_public: isPublic })
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`Server error: ${response.status}`);
+                    const error = await response.json();
+                    throw new Error(error.error || `Server error: ${response.status}`);
                 }
                 
                 const data = await response.json();
@@ -413,25 +592,47 @@
             status.className = `status ${type}`;
         }
         
-        async function loadRecentAudits() {
+        async function loadPublicAudits() {
             try {
-                const response = await fetch('/api/audits?limit=5');
+                const response = await fetch('/api/audits?limit=10&public_only=true');
                 if (!response.ok) return;
                 
                 const audits = await response.json();
                 if (audits.length === 0) return;
                 
-                recentContainer.style.display = 'block';
-                recentList.innerHTML = audits.map(audit => `
-                    <a href="/audits/${audit.id}" class="audit-item">
-                        <div class="audit-item-url">${audit.url}</div>
-                        <span class="audit-item-score">Score: ${audit.score}/100</span>
-                        <div class="audit-item-time">${new Date(audit.timestamp).toLocaleDateString()}</div>
-                    </a>
-                `).join('');
+                publicAuditsContainer.style.display = 'block';
+                auditList.innerHTML = audits.map(audit => {
+                    const date = new Date(audit.timestamp);
+                    const dateStr = date.toLocaleDateString();
+                    const scoreColor = audit.score >= 80 ? '#28a745' : 
+                                      audit.score >= 60 ? '#ffc107' : '#dc3545';
+                    
+                    return `
+                        <a href="/audits/${audit.id}" class="audit-item">
+                            <div class="audit-item-url">${escapeHtml(audit.url)}</div>
+                            <div class="audit-item-meta">
+                                <span class="audit-item-score" style="background: ${scoreColor}; color: white;">
+                                    ${audit.score}/100
+                                </span>
+                                <span class="audit-item-time">${dateStr}</span>
+                            </div>
+                        </a>
+                    `;
+                }).join('');
             } catch (error) {
-                console.error('Failed to load recent audits:', error);
+                console.error('Failed to load public audits:', error);
             }
+        }
+        
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
         }
     </script>
 </body>

@@ -1,0 +1,21 @@
+{
+  "url": "https://example.com",
+  "timestamp": "2026-03-14T10:33:34.586017",
+  "score": 75,
+  "total_issues": 2,
+  "critical": 0,
+  "warnings": 2,
+  "info": 0,
+  "grade": "C (Fair)",
+  "issues_by_category": {
+    "Images": [
+      {
+        "severity": "warning",
+        "title": "Missing alt text",
+        "description": "Some images lack alt text",
+        "element": null,
+        "recommendation": "Add descriptive alt text"
+      }
+    ]
+  }
+}

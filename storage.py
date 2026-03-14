@@ -23,9 +23,12 @@ class AuditStorage:
         """Generate unique audit ID"""
         return str(uuid4())[:8]
     
-    def save_audit(self, report: Dict) -> str:
+    def save_audit(self, report: Dict, is_public: bool = False) -> str:
         """
         Save audit report as markdown
+        Args:
+            report: audit report dict
+            is_public: whether to show in public audits list
         Returns: audit ID
         """
         audit_id = self.generate_id()
@@ -34,6 +37,9 @@ class AuditStorage:
         file_path = self.storage_dir / f"audit_{audit_id}.md"
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(markdown)
+        
+        # Add public flag to report
+        report['is_public'] = is_public
         
         # Also save raw JSON for API
         json_path = self.storage_dir / f"audit_{audit_id}.json"
@@ -111,26 +117,43 @@ class AuditStorage:
         
         return "\n".join(lines)
     
-    def list_audits(self, limit: int = 10) -> list:
-        """List recent audits"""
+    def list_audits(self, limit: int = 10, public_only: bool = False) -> list:
+        """
+        List recent audits
+        Args:
+            limit: max number of audits to return
+            public_only: only return audits marked as public
+        """
         json_files = sorted(
             self.storage_dir.glob("audit_*.json"),
             key=lambda x: x.stat().st_mtime,
             reverse=True
-        )[:limit]
+        )
         
         audits = []
         for json_file in json_files:
             audit_id = json_file.stem.replace("audit_", "")
-            with open(json_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except:
+                continue
+            
+            # Filter by public status if needed
+            if public_only and not data.get('is_public', False):
+                continue
+            
             audits.append({
                 'id': audit_id,
                 'url': data['url'],
                 'score': data['score'],
                 'timestamp': data['timestamp'],
-                'grade': data['grade']
+                'grade': data['grade'],
+                'is_public': data.get('is_public', False)
             })
+            
+            if len(audits) >= limit:
+                break
         
         return audits
 
