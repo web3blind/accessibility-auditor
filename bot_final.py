@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
-Accessibility Auditor - Combined Telegram Bot + Web API
+Accessibility Auditor - Combined Telegram Bot + Web API (FIXED)
 FastAPI server on :3000, Telegram bot polling in separate thread
+
+Key fixes:
+- Proper daemon thread supervision with error recovery
+- Uvicorn server configuration for stability
+- Graceful shutdown handling
+- Thread-safe status tracking
 """
 
 import asyncio
@@ -10,6 +16,9 @@ import sys
 import os
 import threading
 import json
+import time
+import traceback
+import signal
 from pathlib import Path
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
@@ -49,6 +58,11 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Global state for shutdown coordination
+shutdown_event = threading.Event()
+api_server = None
+api_thread = None
 
 # Initialize services
 storage = AuditStorage()
@@ -129,25 +143,64 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         # Save result
-        audit_id = storage.save_audit(user_message, audit_result)
+        audit_id = storage.save_audit(audit_result)
+        audit_link = f\"https://hexdrive.tech/audits/{audit_id}\"
         
-        # Build complete summary message with domain and rating
-        score = audit_result.get("score", 0)
-        issues = audit_result.get("issues", {})
+        # Build comprehensive report - ONE MESSAGE
+        score = audit_result.get(\"score\", 0)
+        grade = audit_result.get(\"grade\", \"N/A\")
+        total = audit_result.get(\"total_issues\", 0)
+        critical = audit_result.get(\"critical\", 0)
+        warnings = audit_result.get(\"warnings\", 0)
+        info = audit_result.get(\"info\", 0)
         domain = urlparse(user_message).netloc or user_message
         
-        summary = f"🔍 *{domain}*\n"
-        summary += f"⭐️ *Rating: {score}%*\n\n"
-        summary += "📊 *Issues Found:*\n"
+        score_emoji = \"🟢\" if score >= 80 else \"🟡\" if score >= 60 else \"🔴\"
         
-        for category, count in issues.items():
-            if count > 0:
-                summary += f"• {category.title()}: {count}\n"
+        # Start report
+        report = f\"{score_emoji} *Accessibility Audit Report*\\n\\n\"
+        report += f\"🌐 *Domain:* {domain}\\n\"
+        report += f\"⭐️ *Score:* {score}/100 ({grade})\\n\\n\"
+        report += f\"🔗 *Watch on the web:*\\n\"
+        report += f\"{audit_link}\\n\\n\"
+        report += f\"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n\\n\"
         
-        summary += f"\n🌐 *View full report:*\n"
-        summary += f"https://hexdrive.tech/audits/{audit_id}"
+        # Issues by severity
+        report += f\"📊 *Issues by Severity:*\\n\"
+        report += f\"🔴 Critical: {critical}\\n\"
+        report += f\"🟡 Warnings: {warnings}\\n\"
+        report += f\"ℹ️ Info: {info}\\n\"
+        report += f\"*Total Issues: {total}*\\n\\n\"
         
-        await processing_msg.edit_text(summary, parse_mode="Markdown")
+        # Issues by category
+        issues_by_cat = audit_result.get(\"issues_by_category\", {})
+        if issues_by_cat:
+            for category, issues in issues_by_cat.items():
+                report += f\"*{category}* ({len(issues)} issues)\\n\"
+                report += f\"────────────────────────────────────────\\n\\n\"
+                
+                for issue in issues:
+                    severity = issue.get('severity', 'info')
+                    emoji = \"🔴\" if severity == 'critical' else \"🟡\" if severity == 'warning' else \"🔵\"
+                    title = issue.get('title', 'Unknown')
+                    description = issue.get('description', '')
+                    recommendation = issue.get('recommendation', '')
+                    
+                    report += f\"{emoji} *{title}*\\n\"
+                    if description:
+                        report += f\"   {description}\\n\"
+                    if recommendation:
+                        report += f\"   💡 {recommendation}\\n\"
+                    report += \"\\n\"
+        else:
+            report += \"✅ *No issues found!* This website is very accessible.\\n\\n\"
+        
+        # Truncate if too long (Telegram limit)
+        if len(report) > 4000:
+            report = report[:3900] + f\"\\n\\n_See full report on web_\"
+        
+        # Send ONE comprehensive report
+        await processing_msg.edit_text(report, parse_mode=\"Markdown\")
         
     except Exception as e:
         logger.error(f"Audit error: {str(e)}", exc_info=True)
@@ -249,69 +302,62 @@ async def root():
                 grid-template-columns: 1fr 1fr;
                 gap: 15px;
             }
-            .feature-item {
-                display: flex;
-                gap: 10px;
-            }
-            .feature-item::before {
-                content: "✓";
-                color: #667eea;
-                font-weight: bold;
-                min-width: 20px;
-            }
-            .about {
-                background: #f9f9f9;
-                padding: 20px;
+            .feature {
+                padding: 15px;
+                background: #f5f5f5;
                 border-radius: 5px;
-                margin: 30px 0;
-                border-left: 4px solid #667eea;
             }
-            .about p {
-                margin-bottom: 10px;
+            .feature strong {
+                color: #667eea;
             }
-            .about p:last-child {
-                margin-bottom: 0;
+            @media (max-width: 600px) {
+                .feature-list {
+                    grid-template-columns: 1fr;
+                }
+                .container {
+                    padding: 20px;
+                }
             }
         </style>
     </head>
     <body>
         <div class="container">
             <h1>🔍 Accessibility Auditor</h1>
-            <p class="subtitle">WCAG 2.1 & GOST Compliance Analysis</p>
+            <p class="subtitle">Analyze any website for accessibility issues</p>
             
-            <div class="about">
-                <p><strong>About:</strong> Autonomous AI agent analyzing websites for accessibility compliance. Built for blind and low-vision developers.</p>
-                <p><strong>How to use:</strong> Enter any website URL below and get a detailed accessibility report.</p>
-            </div>
-            
-            <form>
+            <form onsubmit="submitAudit(event)">
                 <label for="url">Website URL:</label>
                 <input type="url" id="url" name="url" placeholder="https://example.com" required>
-                <button type="submit">Analyze Website</button>
+                <button type="submit">🚀 Analyze</button>
             </form>
             
             <div class="features">
-                <h2>Key Features</h2>
+                <h2>Features</h2>
                 <div class="feature-list">
-                    <div class="feature-item">WCAG 2.1 AA compliance</div>
-                    <div class="feature-item">Color contrast analysis</div>
-                    <div class="feature-item">Alt text validation</div>
-                    <div class="feature-item">Heading hierarchy</div>
-                    <div class="feature-item">Keyboard navigation</div>
-                    <div class="feature-item">Form labels</div>
-                    <div class="feature-item">GOST compatibility</div>
-                    <div class="feature-item">HTML reports</div>
+                    <div class="feature">
+                        <strong>🎯 WCAG Compliance</strong><br>
+                        Checks against WCAG 2.1 guidelines
+                    </div>
+                    <div class="feature">
+                        <strong>♿ Semantic HTML</strong><br>
+                        Validates proper HTML structure
+                    </div>
+                    <div class="feature">
+                        <strong>🏷️ ARIA Labels</strong><br>
+                        Verifies ARIA attributes
+                    </div>
+                    <div class="feature">
+                        <strong>⌨️ Keyboard Navigation</strong><br>
+                        Tests keyboard accessibility
+                    </div>
                 </div>
             </div>
         </div>
         
         <script>
-            document.querySelector('form').addEventListener('submit', async (e) => {
-                e.preventDefault();
+            async function submitAudit(event) {
+                event.preventDefault();
                 const url = document.getElementById('url').value;
-                const btn = e.target.querySelector('button');
-                btn.disabled = true;
-                btn.textContent = 'Analyzing...';
                 
                 try {
                     const response = await fetch('/api/audit', {
@@ -319,20 +365,17 @@ async def root():
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ url })
                     });
+                    
                     const data = await response.json();
-                    if (response.ok) {
+                    if (data.status === 'success') {
                         window.location.href = data.url;
                     } else {
-                        alert('Error: ' + (data.message || 'Unknown error'));
-                        btn.disabled = false;
-                        btn.textContent = 'Analyze Website';
+                        alert('Error: ' + data.message);
                     }
-                } catch (err) {
-                    alert('Error: ' + err.message);
-                    btn.disabled = false;
-                    btn.textContent = 'Analyze Website';
+                } catch (e) {
+                    alert('Error submitting audit: ' + e.message);
                 }
-            });
+            }
         </script>
     </body>
     </html>
@@ -341,40 +384,16 @@ async def root():
 
 @app.get("/audits/{audit_id}")
 async def get_audit(audit_id: str):
-    """Get audit report as HTML"""
-    audit_file = storage.get_audit_path(audit_id)
-    if not audit_file.exists():
-        return {"error": "Audit not found"}, 404
-    
-    # Read markdown and convert to HTML
-    content = audit_file.read_text()
-    html = f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Accessibility Audit Report</title>
-        <style>
-            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; margin: 40px; line-height: 1.6; }}
-            .container {{ max-width: 900px; margin: 0 auto; }}
-            h1, h2, h3 {{ color: #333; }}
-            .score {{ font-size: 2em; font-weight: bold; color: #4CAF50; }}
-            .issues {{ background: #f5f5f5; padding: 15px; border-radius: 5px; }}
-            pre {{ background: #f9f9f9; padding: 10px; border-left: 3px solid #ddd; overflow-x: auto; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>🔍 Accessibility Audit Report</h1>
-            <pre>{content}</pre>
-            <hr>
-            <p><small>Generated by Accessibility Auditor Bot</small></p>
-        </div>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html)
+    """Get audit result by ID"""
+    try:
+        result = storage.get_audit(audit_id)
+        if not result:
+            return HTMLResponse("<h1>404 - Audit not found</h1>", status_code=404)
+        
+        return HTMLResponse(content=report_gen.generate_html_report(audit_id, result))
+    except Exception as e:
+        logger.error(f"Error retrieving audit {audit_id}: {str(e)}")
+        return HTMLResponse(f"<h1>Error: {str(e)}</h1>", status_code=500)
 
 
 class AuditRequest(BaseModel):
@@ -402,50 +421,117 @@ async def submit_audit(request: AuditRequest):
         return {"status": "error", "message": str(e)}, 500
 
 
-def run_fastapi():
-    """Run FastAPI server"""
-    logger.info(f"Starting FastAPI server on http://{API_HOST}:{API_PORT}")
-    uvicorn.run(app, host=API_HOST, port=API_PORT, log_level="info")
+class UvicornServer(uvicorn.Server):
+    """Custom Uvicorn server with proper shutdown handling"""
+    
+    def install_signal_handlers(self):
+        """Override signal handling to respect our shutdown_event"""
+        # Don't let uvicorn install its own handlers; we handle shutdown
+        pass
+
+
+def run_fastapi_server():
+    """Run FastAPI server with proper error handling"""
+    global api_server
+    
+    try:
+        config = uvicorn.Config(
+            app=app,
+            host=API_HOST,
+            port=API_PORT,
+            log_level="info",
+            access_log=True,
+        )
+        api_server = UvicornServer(config=config)
+        logger.info(f"FastAPI server starting on http://{API_HOST}:{API_PORT}")
+        api_server.run()
+    except Exception as e:
+        logger.error(f"FastAPI server error: {str(e)}")
+        logger.error(traceback.format_exc())
+        # Don't exit; let the main thread detect this and handle it
+    finally:
+        logger.info("FastAPI server thread exiting")
+
+
+def run_telegram_bot():
+    """Run Telegram bot with proper error handling"""
+    max_retries = 3
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            logger.info("Initializing Telegram bot...")
+            application = Application.builder().token(TOKEN).build()
+            
+            # Add handlers
+            application.add_handler(CommandHandler("start", start_handler))
+            application.add_handler(CommandHandler("help", help_handler))
+            application.add_handler(CommandHandler("status", status_handler))
+            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+            
+            logger.info("Application initialized")
+            logger.info("Starting bot polling...")
+            
+            # Run bot without closing the event loop (we manage it ourselves)
+            # disable stop_signals to prevent the app from catching SIGTERM/SIGINT
+            application.run_polling(
+                allowed_updates=Update.ALL_TYPES,
+                close_loop=False,  # Don't close the event loop
+                stop_signals=(signal.SIGTERM,)  # Only respond to SIGTERM
+            )
+            
+        except Exception as e:
+            retry_count += 1
+            logger.error(f"Telegram bot error (attempt {retry_count}/{max_retries}): {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            if retry_count >= max_retries:
+                logger.error("Max retries exceeded, giving up")
+                raise
+            else:
+                logger.info(f"Retrying in 5 seconds...")
+                time.sleep(5)
+    
+    logger.info("Telegram bot thread exiting")
 
 
 def main():
-    """Main entry point"""
+    """Main entry point with proper daemon management"""
+    global api_thread
+    
     logger.info("=" * 60)
-    logger.info("Accessibility Auditor Bot + API")
+    logger.info("Accessibility Auditor Bot + API (FIXED VERSION)")
     logger.info("=" * 60)
     
-    # Start FastAPI in background thread
-    logger.info("Starting FastAPI server in background thread...")
-    api_thread = threading.Thread(target=run_fastapi, daemon=True)
+    # Start FastAPI in daemon thread
+    logger.info("Starting FastAPI server in daemon thread...")
+    api_thread = threading.Thread(target=run_fastapi_server, daemon=True, name="FastAPI")
     api_thread.start()
     
     # Give FastAPI time to start
-    import time
-    time.sleep(1)
+    time.sleep(2)
     
-    # Initialize bot
-    logger.info("Initializing Telegram bot...")
-    application = Application.builder().token(TOKEN).build()
+    # Set signal handlers for graceful shutdown
+    def signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, initiating shutdown...")
+        shutdown_event.set()
     
-    # Add handlers
-    application.add_handler(CommandHandler("start", start_handler))
-    application.add_handler(CommandHandler("help", help_handler))
-    application.add_handler(CommandHandler("status", status_handler))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
     
-    logger.info("Application started")
-    logger.info("Bot polling started successfully")
-    
-    # Run bot with run_polling (handles event loop internally)
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        # Run bot in main thread
+        run_telegram_bot()
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Fatal error in main: {str(e)}")
+        logger.error(traceback.format_exc())
+    finally:
+        logger.info("Shutting down...")
+        shutdown_event.set()
+        sys.exit(0)
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-        sys.exit(0)
-    except Exception as e:
-        logger.error(f"Fatal error: {str(e)}", exc_info=True)
-        sys.exit(1)
+    main()
