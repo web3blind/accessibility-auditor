@@ -1,0 +1,54 @@
+{
+  "url": "https://nousresearch.com",
+  "timestamp": "2026-03-14T13:11:09.984906",
+  "score": 70,
+  "total_issues": 5,
+  "critical": 1,
+  "warnings": 4,
+  "info": 0,
+  "issues_by_category": {
+    "Semantic HTML": [
+      {
+        "severity": "warning",
+        "title": "Non-semantic div used",
+        "description": "Div with class 'elementor' should use semantic tag",
+        "element": "<div class=\"elementor elementor-93 elementor-locat",
+        "recommendation": "Use <main>, <header>, <footer>, <nav>, <article>, or <section> instead"
+      },
+      {
+        "severity": "warning",
+        "title": "Non-semantic div used",
+        "description": "Div with class 'elementor-element' should use semantic tag",
+        "element": "<div class=\"elementor-element elementor-element-6b",
+        "recommendation": "Use <main>, <header>, <footer>, <nav>, <article>, or <section> instead"
+      },
+      {
+        "severity": "warning",
+        "title": "Non-semantic div used",
+        "description": "Div with class 'elementor' should use semantic tag",
+        "element": "<div class=\"elementor elementor-933 elementor-loca",
+        "recommendation": "Use <main>, <header>, <footer>, <nav>, <article>, or <section> instead"
+      }
+    ],
+    "Links": [
+      {
+        "severity": "critical",
+        "title": "1 links have no text",
+        "description": "Found 1 <a> tags without text content",
+        "element": null,
+        "recommendation": "Add descriptive text to all links or use aria-label"
+      }
+    ],
+    "Headings": [
+      {
+        "severity": "warning",
+        "title": "No headings found",
+        "description": "Page has no heading tags (h1-h6)",
+        "element": null,
+        "recommendation": "Use proper heading hierarchy starting with h1"
+      }
+    ]
+  },
+  "grade": "C (Fair)",
+  "is_public": false
+}
