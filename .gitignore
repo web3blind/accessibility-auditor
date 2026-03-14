@@ -1,37 +1,32 @@
+# Bot runtime
+.bot.pid
+bot.log
+keep-alive.log
+
+# Backups & temp files
+*.backup_old
+*_fixed.py
+*.tmp
+__pycache__/
+*.pyc
+
 # Virtual environment
 venv/
 env/
-.venv/
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
-# Logs
-*.log
-bot.log
-*.log
-
-# Audit results (optional - can be committed)
-# audits/*.json
-# audits/*.md
-
-# Environment variables
+# Environment
 .env
 .env.local
 
+# Audit results (optional - uncomment if you want to share audits in git)
+# audits/
+
 # OS
 .DS_Store
-.AppleDouble
-.LSOverride
-Thumbs.db
+.Thumbs.db
