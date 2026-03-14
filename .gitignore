@@ -1,1 +1,37 @@
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+bot.log
+*.log
+
+# Audit results (optional - can be committed)
+# audits/*.json
+# audits/*.md
+
+# Environment variables
 .env
+.env.local
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db

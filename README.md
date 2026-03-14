@@ -19,35 +19,106 @@ Built for blind and low-vision users.
 - Page structure
 - Responsive design
 
+## Access Methods
+
+### 🤖 Telegram Bot
+**Telegram:** https://t.me/accessibilityAuditAgentBot
+
+Send `/audit https://example.com` to get instant analysis
+
+### 🌐 Web Interface
+**URL:** https://yourdomain.com (or localhost:3000 when running locally)
+
+Beautiful, accessible web form for auditing websites
+
+## How It Works
+
+1. **Dual Interface** - Works via Telegram bot OR web form
+2. **Real-time Analysis** - Fetches & parses HTML instantly
+3. **12 Comprehensive Checks** - Validates WCAG 2.1 & GOST compliance
+4. **Detailed Reports** - Beautiful HTML reports with scoring & recommendations
+5. **Persistent Storage** - All results saved as markdown files
+6. **Shareable Links** - Each audit gets a unique URL for sharing results
+
 ## Tech Stack
 
 - Python 3.12
+- FastAPI (API + static web server)
 - BeautifulSoup4 (HTML parsing)
 - python-telegram-bot
 - Async architecture
 - Hermes Agent framework
 
-## Live Bot
-
-Telegram: https://t.me/accessibilityAuditAgentBot
-
-Usage: /audit https://example.com
-
-## How It Works
-
-1. Autonomous - runs 24/7 without human intervention
-2. Real-time analysis - fetches & parses HTML
-3. 12 checks - runs accessibility validation
-4. Detailed reports - scoring & recommendations
-5. 24/7 monitoring - Hermes cronjob ensures uptime
-
 ## Installation
 
+### 1. Clone Repository
 ```bash
 git clone https://github.com/web3blind/accessibility-auditor.git
-pip install -r requirements.txt
-python3 -u -B bot_final.py
+cd accessibility-auditor
 ```
+
+### 2. Create Virtual Environment
+```bash
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+### 3. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Set Environment Variables
+```bash
+export TELEGRAM_BOT_TOKEN="your_token_here"
+```
+
+### 5. Run Combined Bot + API
+```bash
+python3 -u bot_final.py
+```
+
+This starts:
+- ✅ Telegram Bot (async polling)
+- ✅ Web API on http://localhost:3000
+- ✅ Web Interface at http://localhost:3000
+
+## Usage
+
+### Via Telegram
+```
+/start              - Show help
+/audit https://...  - Audit a website
+(or just send a URL) - Auto-detects URLs
+```
+
+### Via Web
+1. Go to http://localhost:3000
+2. Enter website URL
+3. Click "Start Audit"
+4. View beautiful report with detailed analysis
+
+## File Structure
+```
+accessibility-auditor/
+├── bot_final.py          # Combined Telegram bot + FastAPI server
+├── auditor.py            # Core 12 accessibility checks
+├── storage.py            # Save/load audit results
+├── report_generator.py    # Generate beautiful HTML reports
+├── api.py                # FastAPI endpoints (reference)
+├── web/
+│   └── index.html        # Web form interface
+├── audits/               # Stored audit results (.json + .md)
+├── requirements.txt      # Python dependencies
+└── README.md             # This file
+```
+
+## Example Results
+
+Each audit generates:
+1. **JSON report** - Machine-readable data
+2. **HTML report** - Beautiful interactive page
+3. **Markdown report** - Readable text format
 
 ## Built With
 

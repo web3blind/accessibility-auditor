@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accessibility Auditor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .logo h1 {
+            font-size: 2.5em;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .logo p {
+            color: #666;
+            font-size: 1.1em;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 1em;
+        }
+        
+        input[type="url"],
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+        }
+        
+        input[type="url"]:focus,
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+        
+        .btn-primary:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+        
+        .examples {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 20px;
+            font-size: 0.9em;
+        }
+        
+        .examples p {
+            margin-bottom: 8px;
+            color: #666;
+        }
+        
+        .examples code {
+            background: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            color: #667eea;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            display: none;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .status.loading {
+            background: #e7f3ff;
+            color: #0066cc;
+            display: block;
+        }
+        
+        .status.success {
+            background: #e6ffed;
+            color: #22863a;
+            display: block;
+        }
+        
+        .status.error {
+            background: #ffe6e6;
+            color: #d73a49;
+            display: block;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #667eea;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .recent-audits {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #e9ecef;
+        }
+        
+        .recent-audits h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .audit-item {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        
+        .audit-item:hover {
+            background: #e9ecef;
+            transform: translateX(5px);
+        }
+        
+        .audit-item-url {
+            font-weight: 600;
+            color: #667eea;
+            word-break: break-all;
+            font-size: 0.95em;
+        }
+        
+        .audit-item-score {
+            display: inline-block;
+            margin-top: 5px;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 600;
+            background: white;
+            color: #667eea;
+        }
+        
+        .audit-item-time {
+            font-size: 0.85em;
+            color: #999;
+        }
+        
+        /* Accessibility */
+        a:focus,
+        button:focus,
+        input:focus {
+            outline: 3px solid #667eea;
+            outline-offset: 2px;
+        }
+        
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            background: #667eea;
+            color: white;
+            padding: 8px;
+            text-decoration: none;
+            z-index: 100;
+        }
+        
+        .skip-link:focus {
+            top: 0;
+        }
+        
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0,0,0,0);
+            white-space: nowrap;
+            border-width: 0;
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+            
+            .logo h1 {
+                font-size: 2em;
+            }
+            
+            .button-group {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <a href="#main" class="skip-link">Skip to main content</a>
+    
+    <div class="container">
+        <div class="logo">
+            <h1>♿</h1>
+            <h2 style="font-size: 1.8em; margin-bottom: 5px;">Accessibility Auditor</h2>
+            <p>Check your website for accessibility issues</p>
+        </div>
+        
+        <main id="main">
+            <form id="auditForm">
+                <div class="form-group">
+                    <label for="urlInput">Website URL</label>
+                    <input 
+                        type="url" 
+                        id="urlInput" 
+                        name="url"
+                        placeholder="https://example.com"
+                        required
+                        aria-describedby="urlHelp"
+                    >
+                    <div id="urlHelp" class="sr-only">
+                        Enter the URL of the website you want to audit. Start with https:// or http://
+                    </div>
+                </div>
+                
+                <div class="button-group">
+                    <button type="submit" class="btn-primary" id="submitBtn">
+                        Start Audit
+                    </button>
+                    <button type="reset" class="btn-secondary">
+                        Clear
+                    </button>
+                </div>
+                
+                <div id="status" class="status" role="status" aria-live="polite">
+                    <span class="spinner"></span>
+                    <span id="statusText">Analyzing website...</span>
+                </div>
+            </form>
+            
+            <div class="examples">
+                <p><strong>Examples to try:</strong></p>
+                <p>
+                    <code>example.com</code> or <code>https://google.com</code>
+                </p>
+            </div>
+            
+            <div id="recentContainer" class="recent-audits" style="display: none;">
+                <h3>Recent Audits</h3>
+                <div id="recentList"></div>
+            </div>
+        </main>
+    </div>
+    
+    <script>
+        const form = document.getElementById('auditForm');
+        const urlInput = document.getElementById('urlInput');
+        const submitBtn = document.getElementById('submitBtn');
+        const status = document.getElementById('status');
+        const statusText = document.getElementById('statusText');
+        const recentContainer = document.getElementById('recentContainer');
+        const recentList = document.getElementById('recentList');
+        
+        // Load recent audits on page load
+        loadRecentAudits();
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const url = urlInput.value.trim();
+            if (!url) {
+                showStatus('Please enter a URL', 'error');
+                return;
+            }
+            
+            submitBtn.disabled = true;
+            showStatus('Analyzing website...', 'loading');
+            
+            try {
+                const response = await fetch('/api/audit', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const auditId = data.audit_id;
+                
+                showStatus(`Audit complete! Redirecting...`, 'success');
+                
+                // Redirect to results after a short delay
+                setTimeout(() => {
+                    window.location.href = `/audits/${auditId}`;
+                }, 1000);
+                
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+                submitBtn.disabled = false;
+            }
+        });
+        
+        function showStatus(message, type) {
+            statusText.textContent = message;
+            status.className = `status ${type}`;
+        }
+        
+        async function loadRecentAudits() {
+            try {
+                const response = await fetch('/api/audits?limit=5');
+                if (!response.ok) return;
+                
+                const audits = await response.json();
+                if (audits.length === 0) return;
+                
+                recentContainer.style.display = 'block';
+                recentList.innerHTML = audits.map(audit => `
+                    <a href="/audits/${audit.id}" class="audit-item">
+                        <div class="audit-item-url">${audit.url}</div>
+                        <span class="audit-item-score">Score: ${audit.score}/100</span>
+                        <div class="audit-item-time">${new Date(audit.timestamp).toLocaleDateString()}</div>
+                    </a>
+                `).join('');
+            } catch (error) {
+                console.error('Failed to load recent audits:', error);
+            }
+        }
+    </script>
+</body>
+</html>
