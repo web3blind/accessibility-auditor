@@ -29,7 +29,7 @@ Built for blind and low-vision users.
 Send `/audit https://example.com` to get instant analysis
 
 ### 🌐 Web Interface
-**URL:** https://yourdomain.com (or localhost:3000 when running locally)
+**URL:** https://hexdrive.tech (or localhost:3000 when running locally)
 
 Beautiful, accessible web form for auditing websites
 
