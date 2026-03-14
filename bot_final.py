@@ -410,7 +410,7 @@ async def submit_audit(request: AuditRequest):
     
     try:
         result = await audit_website(url)
-        audit_id = storage.save_audit(url, result)
+        audit_id = storage.save_audit(result)
         return {
             "status": "success",
             "audit_id": audit_id,
