@@ -1,15 +1,15 @@
 #!/bin/bash
-# Start bot with environment from .env
+# Start Accessibility Auditor Bot with venv activated
 
-cd ~/.hermes/agents/accessibility-auditor
+cd /root/.hermes/agents/accessibility-auditor
 
-# Load .env file
-if [ -f .env ]; then
-    export $(cat .env | xargs)
-fi
+# Activate virtual environment
+source venv/bin/activate
 
-# Start bot
-python3 -u -B bot_final.py &
+# Start bot process
+nohup python3 -u -B bot_final.py >> bot.log 2>&1 &
+
+# Save PID
 echo $! > bot.pid
 
-echo "✅ Bot started with PID $(cat bot.pid)"
+echo "Bot started with PID: $!"

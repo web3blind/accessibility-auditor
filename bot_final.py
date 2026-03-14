@@ -48,152 +48,151 @@ def is_valid_url(url: str) -> bool:
     """Validate URL format"""
     try:
         result = urlparse(url)
-        return all([result.scheme in ['http', 'https'], result.netloc])
+        return all([result.scheme, result.netloc])
     except:
         return False
 
 
+# Telegram Bot Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
-    logger.info(f"START from {update.effective_user.id}")
     await update.message.reply_text(
-        "🤖 Hermes Agent - Accessibility Auditor\n\n"
-        "Analyzes websites for WCAG 2.1 & GOST compliance\n\n"
-        "Usage:\n"
-        "/audit https://example.com\n\n"
-        "What we check:\n"
-        "✅ Semantic HTML\n"
-        "✅ Image alt text\n"
-        "✅ Link quality\n"
-        "✅ Heading structure\n"
-        "✅ Forms\n"
-        "✅ Keyboard navigation\n"
-        "✅ ARIA attributes\n"
-        "✅ Media captions\n"
-        "✅ Contrast ratios\n"
-        "✅ Language declaration\n"
-        "✅ Page structure\n"
-        "✅ Responsive design\n\n"
-        "Web interface: https://hexdrive.tech"
+        "🔍 **Accessibility Auditor Bot**\n\n"
+        "Send me a URL to audit its accessibility:\n\n"
+        "Examples:\n"
+        "• google.com\n"
+        "• https://github.com\n\n"
+        "Or use /audit <url>"
     )
 
 
 async def audit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /audit command or URL submission"""
-    url = None
+    """Handle audit requests"""
+    user_input = None
     
-    # Check if it's a command or plain text
-    if context.args:
-        url = context.args[0]
-    elif update.message.text and not update.message.text.startswith('/'):
-        url = update.message.text.strip()
+    # Check if it's a command (/audit) or just text
+    if update.message.text.startswith('/audit'):
+        # /audit command format
+        parts = update.message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            await update.message.reply_text("Usage: /audit <url>")
+            return
+        user_input = parts[1]
+    else:
+        # Plain text message - treat as URL
+        user_input = update.message.text
     
-    if not url:
-        await update.message.reply_text(
-            "❌ Usage: /audit <URL>\n"
-            "Example: /audit https://example.com"
-        )
-        return
-    
-    # Add protocol if missing
-    if not url.startswith(('http://', 'https://')):
-        url = 'https://' + url
+    # Validate and normalize URL
+    url = user_input.strip()
+    if not is_valid_url(url):
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
     
     if not is_valid_url(url):
-        await update.message.reply_text(f"❌ Invalid URL: {url}")
+        await update.message.reply_text("❌ Invalid URL. Please provide a valid website URL.")
         return
     
-    await update.message.chat.send_action(ChatAction.TYPING)
-    
-    logger.info(f"AUDIT requested for {url}")
-    await update.message.reply_text(f"🔍 Analyzing {url}...\n\nThis may take a moment...")
-    
     try:
+        await update.message.chat.send_action(ChatAction.TYPING)
+        await update.message.reply_text(f"🔍 Auditing: {url}\n\nPlease wait...")
+        
         # Run audit
-        result = await audit_website(url)
+        report = await audit_website(url)
+        audit_id = storage.save_audit(report, is_public=False)
         
-        # Save to storage (not public by default)
-        audit_id = storage.save_audit(result, is_public=False)
-        audit_link = f"https://hexdrive.tech/audits/{audit_id}"
+        # Generate HTML report
+        html_report = report_gen.generate_html(report)
         
-        # Build report
-        score = result.get("score", 0)
-        grade = result.get("grade", "N/A")
-        total = result.get("total_issues", 0)
-        critical = result.get("critical", 0)
-        warnings = result.get("warnings", 0)
-        info = result.get("info", 0)
+        # Save HTML to file
+        report_path = Path("audits") / f"audit_{audit_id}.html"
+        report_path.write_text(html_report)
         
-        score_emoji = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
+        # Create summary message
+        summary = f"""
+✅ **Audit Complete**
+
+📊 Results:
+• Errors: {len(report.get('errors', []))}
+• Warnings: {len(report.get('warnings', []))}
+• Info: {len(report.get('info', []))}
+
+🔗 Full Report: https://hexdrive.tech/audits/audit_{audit_id}.html
+
+More: https://hexdrive.tech/audits/audit_{audit_id}.html
+        """
         
-        report = f"{score_emoji} **Score: {score}/100 ({grade})**\n\n"
-        report += f"📊 **Summary:**\n"
-        report += f"• Total issues: {total}\n"
-        report += f"• Critical: {critical}\n"
-        report += f"• Warnings: {warnings}\n"
-        report += f"• Info: {info}\n\n"
-        
-        # Issues by category
-        issues_by_cat = result.get("issues_by_category", {})
-        if issues_by_cat:
-            report += "**Issues Found:**\n\n"
-            for category, issues in issues_by_cat.items():
-                report += f"**{category}**\n"
-                for issue in issues[:2]:  # Show first 2 per category
-                    severity = issue.get('severity', 'info')
-                    emoji = "🔴" if severity == 'critical' else "🟡" if severity == 'warning' else "🔵"
-                    title = issue.get('title', 'Unknown')
-                    report += f"{emoji} {title}\n"
-                    
-                    if len(issues) > 2 and issue == issues[1]:
-                        report += f"... and {len(issues) - 2} more\n"
-                
-                report += "\n"
-        else:
-            report += "✅ No issues found! This website is very accessible.\n\n"
-        
-        # Truncate if too long
-        if len(report) > 3500:
-            report = report[:3400] + "\n\n... (see full report on web)"
-        
-        # Send main report
-        await update.message.reply_text(report)
-        
-        # Send link to detailed report
-        await update.message.reply_text(
-            f"📖 **More details:**\n"
-            f"More: {audit_link}"
-        )
-        
-        logger.info(f"AUDIT completed for {url} (ID: {audit_id})")
+        await update.message.reply_text(summary)
+        logger.info(f"AUDIT COMPLETE: {url} (ID: {audit_id})")
         
     except Exception as e:
-        logger.error(f"AUDIT error for {url}: {str(e)}", exc_info=True)
-        await update.message.reply_text(
-            f"❌ Error analyzing {url}:\n\n"
-            f"{str(e)[:200]}"
-        )
+        logger.error(f"Audit error for {url}: {str(e)}")
+        await update.message.reply_text(f"❌ Audit failed: {str(e)}")
 
 
-def run_telegram_bot():
-    """Run Telegram bot in blocking mode"""
+class TelegramBotManager:
+    """Manage Telegram bot lifecycle"""
+    
+    def __init__(self, token: str):
+        self.token = token
+        self.app = None
+        self.running = False
+    
+    async def start(self):
+        """Start the bot"""
+        try:
+            logger.info("Telegram bot initializing...")
+            self.app = Application.builder().token(self.token).build()
+            
+            # Add handlers
+            self.app.add_handler(CommandHandler("start", start))
+            self.app.add_handler(CommandHandler("audit", audit))
+            self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, audit))
+            
+            # Start the application
+            await self.app.initialize()
+            logger.info("Bot initialized, starting polling...")
+            
+            # Start polling
+            self.running = True
+            await self.app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+            logger.info("Bot polling started successfully")
+            
+        except Exception as e:
+            logger.error(f"Telegram bot error: {str(e)}", exc_info=True)
+            self.running = False
+    
+    async def stop(self):
+        """Stop the bot gracefully"""
+        try:
+            if self.app and self.running:
+                logger.info("Stopping bot polling...")
+                await self.app.updater.stop()
+                await self.app.shutdown()
+                self.running = False
+                logger.info("Bot stopped successfully")
+        except Exception as e:
+            logger.error(f"Error stopping bot: {str(e)}")
+
+
+def run_telegram_bot_sync():
+    """Run bot in a separate thread (synchronous wrapper)"""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
+    bot_manager = TelegramBotManager(TOKEN)
+    
     try:
-        app = Application.builder().token(TOKEN).build()
-        
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(CommandHandler("audit", audit))
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, audit))
-        
-        logger.info("Telegram bot initializing...")
-        logger.info("Bot polling started")
-        app.run_polling(allowed_updates=Update.ALL_TYPES)
+        loop.run_until_complete(bot_manager.start())
+    except KeyboardInterrupt:
+        logger.info("Bot interrupted")
+        loop.run_until_complete(bot_manager.stop())
     except Exception as e:
-        logger.error(f"Telegram bot error: {str(e)}", exc_info=True)
+        logger.error(f"Bot thread error: {str(e)}", exc_info=True)
     finally:
-        loop.close()
+        try:
+            loop.close()
+        except:
+            pass
 
 
 def create_fastapi_app():
@@ -205,18 +204,20 @@ def create_fastapi_app():
         url: str
         is_public: bool = False
     
-    # Serve static files if they exist
+    # Serve web interface
     web_dir = Path("web")
-    if web_dir.exists():
-        try:
-            from fastapi.staticfiles import StaticFiles
-            api_app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
-        except:
-            pass
     
-    # API endpoints
+    @api_app.get("/")
+    async def home():
+        """Serve main page"""
+        index_path = web_dir / "index.html"
+        if index_path.exists():
+            return HTMLResponse(index_path.read_text())
+        return {"message": "Accessibility Auditor API"}
+    
     @api_app.post("/api/audit")
     async def create_audit(request: AuditRequestExtended):
+        """Create new audit"""
         if not request.url:
             return {"error": "URL required"}, 400
         
@@ -227,37 +228,38 @@ def create_fastapi_app():
         try:
             report = await audit_website(url)
             audit_id = storage.save_audit(report, is_public=request.is_public)
+            
+            html_report = report_gen.generate_html(report)
+            report_path = Path("audits") / f"audit_{audit_id}.html"
+            report_path.write_text(html_report)
+            
             return {
+                "status": "success",
                 "audit_id": audit_id,
-                "message": f"Audit completed. View results at /audits/{audit_id}"
+                "report_url": f"/audits/audit_{audit_id}.html",
+                "report": report
             }
         except Exception as e:
             logger.error(f"API audit error: {str(e)}")
             return {"error": str(e)}, 500
     
-    @api_app.get("/audits/{audit_id}")
-    async def get_audit_html(audit_id: str):
-        report = storage.get_audit(audit_id)
-        if not report:
-            return HTMLResponse("<h1>404 - Audit not found</h1>", status_code=404)
+    @api_app.get("/audits/{filename}")
+    async def get_audit(filename: str):
+        """Get audit report by ID"""
+        if not filename.endswith('.html'):
+            filename += '.html'
         
-        html = report_gen.generate_html(report)
-        return HTMLResponse(content=html)
-    
-    @api_app.get("/")
-    async def serve_root():
-        web_index = Path("web/index.html")
-        if web_index.exists():
-            return FileResponse(str(web_index), media_type="text/html")
-        return HTMLResponse("<h1>Accessibility Auditor</h1><p>Web interface loading...</p>")
+        report_path = Path("audits") / filename
+        if report_path.exists():
+            return HTMLResponse(report_path.read_text())
+        
+        return {"error": "Audit not found"}, 404
     
     @api_app.get("/api/audits")
-    async def list_audits(limit: int = 10, public_only: bool = True):
-        return storage.list_audits(limit, public_only=public_only)
-    
-    @api_app.get("/health")
-    async def health_check():
-        return {"status": "ok"}
+    async def list_audits():
+        """List public audits"""
+        audits = storage.list_audits(public_only=True, limit=10)
+        return {"audits": audits}
     
     return api_app
 
@@ -268,21 +270,20 @@ def main():
     logger.info("Accessibility Auditor Bot + API")
     logger.info("=" * 60)
     
-    # Create FastAPI app
-    api_app = create_fastapi_app()
-    
-    # Start Telegram bot in separate thread
-    bot_thread = threading.Thread(target=run_telegram_bot, daemon=True)
+    # Start bot in background thread
+    logger.info("Starting Telegram bot in background thread...")
+    bot_thread = threading.Thread(target=run_telegram_bot_sync, daemon=True)
     bot_thread.start()
-    logger.info("Telegram bot started in background thread")
     
     # Give bot time to initialize
     import time
     time.sleep(2)
     
-    # Start FastAPI server (blocks main thread)
+    # Start FastAPI server
+    logger.info("Starting FastAPI server on http://127.0.0.1:3000 (localhost only)")
+    api_app = create_fastapi_app()
+    
     try:
-        logger.info("Starting FastAPI server on http://127.0.0.1:3000 (localhost only)")
         uvicorn.run(
             api_app,
             host="127.0.0.1",
@@ -290,19 +291,10 @@ def main():
             log_level="info"
         )
     except KeyboardInterrupt:
-        logger.info("Shutting down...")
-        sys.exit(0)
+        logger.info("Server interrupted")
     except Exception as e:
-        logger.error(f"API server error: {str(e)}", exc_info=True)
-        sys.exit(1)
+        logger.error(f"Server error: {str(e)}", exc_info=True)
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-        sys.exit(0)
-    except Exception as e:
-        logger.error(f"Startup error: {str(e)}", exc_info=True)
-        sys.exit(1)
+    main()
