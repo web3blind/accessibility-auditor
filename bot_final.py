@@ -69,42 +69,24 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await update.message.reply_text(
         "🔍 *Accessibility Auditor*\n\n"
-        "⭐️ Rating: 4.8/5.0\n\n"
-        "🌐 Watch on the web: https://hexdrive.tech\n\n"
-        "*About*\n"
-        "Autonomous AI agent analyzing websites for WCAG 2.1 accessibility compliance and GOST standards. Built for blind and low-vision users.\n\n"
-        "*Features*\n"
-        "✓ WCAG 2.1 level AA compliance checks\n"
-        "✓ Color contrast analysis\n"
-        "✓ Image alternative text validation\n"
-        "✓ Heading hierarchy verification\n"
-        "✓ Form label accessibility\n"
-        "✓ Keyboard navigation testing\n"
-        "✓ GOST compatibility analysis\n"
-        "✓ Detailed HTML reports\n\n"
-        "*How to use*\n"
-        "Just send me any website URL and I'll perform a complete accessibility audit:\n\n"
-        "example.com\n"
-        "https://github.com\n"
-        "https://wikipedia.org\n\n"
-        "Results are saved and viewable on the web interface.",
-        parse_mode="Markdown"
+        "Hi! Send me a website URL and I'll analyze it for accessibility issues.\n\n"
+        "Example: https://example.com"
     )
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command"""
     await update.message.reply_text(
-        "📋 **How to use Accessibility Auditor:**\n\n"
+        "📋 *How to use Accessibility Auditor:*\n\n"
         "1. Send any website URL\n"
         "2. Bot analyzes accessibility\n"
         "3. Get detailed report\n"
         "4. View results on web: https://hexdrive.tech\n\n"
-        "**Commands:**\n"
+        "*Commands:*\n"
         "/start - Welcome message\n"
         "/help - This message\n"
         "/status - Check bot status\n\n"
-        "**Questions?** Contact @web3blind",
+        "*Questions?* Contact @web3blind",
         parse_mode="Markdown"
     )
 
@@ -123,15 +105,15 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not is_valid_url(user_message):
         await update.message.reply_text(
-            "❌ Invalid URL format.\\n\\n"
-            "Please send a valid URL:\\n"
+            "❌ Invalid URL format.\n\n"
+            "Please send a valid URL:\n"
             "https://example.com"
         )
         return
     
     # Send processing message
     processing_msg = await update.message.reply_text(
-        f"🔄 Analyzing {user_message}...\\n\\n"
+        f"🔄 Analyzing {user_message}...\n\n"
         "This may take a minute..."
     )
     
@@ -141,7 +123,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if not audit_result:
             await processing_msg.edit_text(
-                "❌ Failed to audit website.\\n\\n"
+                "❌ Failed to audit website.\n\n"
                 "Unknown error"
             )
             return
@@ -149,21 +131,38 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Save result
         audit_id = storage.save_audit(user_message, audit_result)
         
-        # Send summary
+        # Build summary message
         score = audit_result.get("score", 0)
         issues = audit_result.get("issues", {})
         
         summary = (
-            f"✅ **Audit Complete**\n\n"
-            f"🎯 **Score: {score}%**\n\n"
-            f"📊 **Issues Found:**\n"
+            f"✅ *Audit Complete*\n\n"
+            f"🎯 *Score: {score}%*\n\n"
+            f"📊 *Issues Found:*\n"
         )
         
         for category, count in issues.items():
             if count > 0:
                 summary += f"• {category.title()}: {count}\n"
         
-        summary += f"\n🔗 View full report: https://hexdrive.tech/audits/{audit_id}"
+        summary += f"\n🌐 *Watch on the web:* https://hexdrive.tech/audits/{audit_id}\n\n"
+        summary += (
+            "━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "🔍 *Accessibility Auditor*\n"
+            "⭐️ Rating: 4.8/5.0\n\n"
+            "*About Project*\n"
+            "AI agent analyzing websites for WCAG 2.1 & GOST accessibility.\n"
+            "Built for blind and low-vision developers.\n\n"
+            "*Key Features*\n"
+            "✓ WCAG 2.1 AA compliance\n"
+            "✓ Contrast analysis\n"
+            "✓ Alt text validation\n"
+            "✓ Keyboard navigation\n"
+            "✓ HTML reports\n\n"
+            "*Contact*\n"
+            "GitHub: github.com/web3blind\n"
+            "Platform: @accessibilityAuditAgentBot"
+        )
         
         await processing_msg.edit_text(summary, parse_mode="Markdown")
         
