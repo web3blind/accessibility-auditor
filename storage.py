@@ -23,6 +23,18 @@ class AuditStorage:
         """Generate unique audit ID"""
         return str(uuid4())[:8]
     
+    def save_audit_with_id(self, audit_id: str, report: Dict, is_public: bool = False) -> str:
+        """Save audit report with a pre-generated ID"""
+        markdown = self._report_to_markdown(report)
+        file_path = self.storage_dir / f"audit_{audit_id}.md"
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(markdown)
+        report['is_public'] = is_public
+        json_path = self.storage_dir / f"audit_{audit_id}.json"
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+        return audit_id
+
     def save_audit(self, report: Dict, is_public: bool = False) -> str:
         """
         Save audit report as markdown

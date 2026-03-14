@@ -24,8 +24,17 @@ env/
 .env
 .env.local
 
-# Audit results (optional - uncomment if you want to share audits in git)
-# audits/
+# Secrets & config with credentials
+config.json
+
+# Audit results
+audits/
+
+# Broken/backup bot files
+bot_final.py.broken
+bot_final.py.backup_old
+bot_fixed.py
+bot.pid
 
 # OS
 .DS_Store

@@ -5,7 +5,6 @@ Analyzes websites for WCAG 2.1 and Russian GOST R 52872-2019 compliance
 """
 
 import asyncio
-import aiohttp
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 import re
@@ -13,6 +12,8 @@ from dataclasses import dataclass
 from typing import List, Dict, Tuple, Optional
 import json
 from datetime import datetime
+import subprocess
+import tempfile
 
 
 @dataclass
@@ -29,7 +30,7 @@ class AuditIssue:
 class AccessibilityAuditor:
     """Main auditor class"""
     
-    def __init__(self, url: str, timeout: int = 10):
+    def __init__(self, url: str, timeout: int = 30):
         self.url = url
         self.timeout = timeout
         self.html = None
@@ -39,40 +40,53 @@ class AccessibilityAuditor:
         self.timestamp = datetime.now().isoformat()
         
     async def fetch_page(self) -> bool:
-        """Fetch and parse the webpage"""
+        """Fetch rendered HTML via headless Chromium running in a subprocess."""
+        import os
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fetch_page.py')
+        python = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'venv', 'bin', 'python3')
+        if not os.path.exists(python):
+            python = sys.executable
+
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    self.url,
-                    timeout=aiohttp.ClientTimeout(total=self.timeout),
-                    headers={'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)'}
-                ) as resp:
-                    if resp.status != 200:
-                        self.issues.append(AuditIssue(
-                            category="Network",
-                            severity="critical",
-                            title=f"HTTP {resp.status}",
-                            description=f"Unable to fetch page (HTTP {resp.status})"
-                        ))
-                        return False
-                    
-                    self.html = await resp.text()
-                    self.soup = BeautifulSoup(self.html, 'html.parser')
-                    return True
+            proc = await asyncio.create_subprocess_exec(
+                python, script, self.url, str(self.timeout),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=self.timeout + 10
+            )
+
+            if proc.returncode == 0:
+                self.html = stdout.decode('utf-8', errors='replace')
+                self.soup = BeautifulSoup(self.html, 'html.parser')
+                return True
+            else:
+                err = stderr.decode('utf-8', errors='replace').strip()
+                # Parse error type from message
+                if err.startswith('Timeout'):
+                    title, desc = 'Timeout', err
+                elif err.startswith('HTTP'):
+                    title, desc = err.split(':', 1)[0].strip(), err
+                else:
+                    title, desc = 'Connection Error', err
+                self.issues.append(AuditIssue(
+                    category="Network", severity="critical",
+                    title=title, description=desc
+                ))
+                return False
+
         except asyncio.TimeoutError:
             self.issues.append(AuditIssue(
-                category="Network",
-                severity="critical",
+                category="Network", severity="critical",
                 title="Timeout",
                 description=f"Page took longer than {self.timeout}s to load"
             ))
             return False
         except Exception as e:
             self.issues.append(AuditIssue(
-                category="Network",
-                severity="critical",
-                title="Connection Error",
-                description=str(e)
+                category="Network", severity="critical",
+                title="Connection Error", description=str(e)
             ))
             return False
 

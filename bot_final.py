@@ -358,28 +358,124 @@ async def root():
             async function submitAudit(event) {
                 event.preventDefault();
                 const url = document.getElementById('url').value;
-                
+                const btn = event.target.querySelector('button');
+                btn.disabled = true;
+                btn.textContent = '⏳ Submitting...';
+
                 try {
                     const response = await fetch('/api/audit', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ url })
                     });
-                    
+
                     const data = await response.json();
                     if (response.ok && data.audit_id) {
-                        window.location.href = '/audits/' + data.audit_id;
+                        window.location.href = '/audits/' + data.audit_id + '/pending';
                     } else {
                         alert('Error: ' + (data.error || 'Unknown error'));
+                        btn.disabled = false;
+                        btn.textContent = '🚀 Analyze';
                     }
                 } catch (e) {
                     alert('Error: ' + e.message);
+                    btn.disabled = false;
+                    btn.textContent = '🚀 Analyze';
                 }
             }
         </script>
     </body>
     </html>
     """)
+
+
+@app.get("/audits/{audit_id}/pending")
+async def audit_pending(audit_id: str):
+    """Waiting page — polls until audit is ready, then redirects"""
+    return HTMLResponse(content=f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analyzing... — Accessibility Auditor</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }}
+        .card {{
+            background: white;
+            border-radius: 12px;
+            padding: 60px 40px;
+            text-align: center;
+            max-width: 480px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }}
+        .spinner {{
+            width: 64px;
+            height: 64px;
+            border: 6px solid #e9ecef;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 30px;
+        }}
+        @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+        h1 {{ font-size: 1.6em; color: #333; margin-bottom: 12px; }}
+        p {{ color: #666; font-size: 1em; line-height: 1.6; }}
+        .dots::after {{
+            content: '';
+            animation: dots 1.5s steps(4, end) infinite;
+        }}
+        @keyframes dots {{
+            0%   {{ content: ''; }}
+            25%  {{ content: '.'; }}
+            50%  {{ content: '..'; }}
+            75%  {{ content: '...'; }}
+        }}
+        .elapsed {{ margin-top: 20px; color: #999; font-size: 0.85em; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="spinner"></div>
+        <h1>Analyzing<span class="dots"></span></h1>
+        <p>Running a full headless browser audit.<br>This usually takes 15–30 seconds.</p>
+        <p class="elapsed" id="elapsed">Elapsed: 0s</p>
+    </div>
+    <script>
+        const start = Date.now();
+        const auditId = "{audit_id}";
+
+        const timer = setInterval(() => {{
+            const s = Math.floor((Date.now() - start) / 1000);
+            document.getElementById('elapsed').textContent = 'Elapsed: ' + s + 's';
+        }}, 1000);
+
+        async function poll() {{
+            try {{
+                const r = await fetch('/api/audit/' + auditId + '/status');
+                const d = await r.json();
+                if (d.ready) {{
+                    clearInterval(timer);
+                    window.location.href = '/audits/' + auditId;
+                    return;
+                }}
+            }} catch(e) {{}}
+            setTimeout(poll, 2000);
+        }}
+
+        setTimeout(poll, 2000);
+    </script>
+</body>
+</html>""")
 
 
 @app.get("/audits/{audit_id}")
@@ -402,27 +498,38 @@ class AuditRequest(BaseModel):
 
 @app.post("/api/audit")
 async def submit_audit(request: AuditRequest):
-    """API endpoint to submit audit request"""
+    """API endpoint: immediately returns audit_id, runs audit in background"""
     url = request.url.strip()
-    
+
     if not is_valid_url(url):
-        return JSONResponse(
-            {"error": "Invalid URL format"},
-            status_code=400
-        )
-    
-    try:
-        result = await audit_website(url)
-        audit_id = storage.save_audit(result)
-        return {
-            "audit_id": audit_id
-        }
-    except Exception as e:
-        logger.error(f"API audit error: {str(e)}")
-        return JSONResponse(
-            {"error": str(e)},
-            status_code=500
-        )
+        return JSONResponse({"error": "Invalid URL format"}, status_code=400)
+
+    audit_id = storage.generate_id()
+
+    async def run_audit_bg():
+        try:
+            result = await audit_website(url)
+            storage.save_audit_with_id(audit_id, result)
+        except Exception as e:
+            logger.error(f"Background audit error: {e}")
+            storage.save_audit_with_id(audit_id, {
+                "url": url, "score": 0, "grade": "F (Fail)",
+                "total_issues": 1, "critical": 1, "warnings": 0, "info": 0,
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                "issues_by_category": {"Network": [{"severity": "critical",
+                    "title": "Audit Failed", "description": str(e),
+                    "element": None, "recommendation": None}]}
+            })
+
+    asyncio.create_task(run_audit_bg())
+    return {"audit_id": audit_id}
+
+
+@app.get("/api/audit/{audit_id}/status")
+async def audit_status(audit_id: str):
+    """Check if audit is ready"""
+    result = storage.get_audit(audit_id)
+    return {"ready": result is not None}
 
 
 class UvicornServer(uvicorn.Server):

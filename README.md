@@ -1,155 +1,170 @@
-# 🤖 Hermes Agent: Accessibility Auditor
+# Accessibility Auditor
 
-Autonomous AI agent analyzing websites for WCAG 2.1 + GOST compliance.
+Web accessibility analysis tool for WCAG 2.1 and GOST R 52872-2019 compliance.
 Built for blind and low-vision users.
 
-🤖 **[Telegram Bot: @accessibilityAuditAgentBot](https://t.me/accessibilityAuditAgentBot)** | 🌐 **[Web Interface](https://hexdrive.tech)**
+🤖 **[Telegram Bot: @accessibilityAuditAgentBot](https://t.me/accessibilityAuditAgentBot)** | 🌐 **[Web Interface: hexdrive.tech](https://hexdrive.tech)**
 
 ## Features
 
-✅ 12 Automated Accessibility Checks:
+12 automated accessibility checks:
+
 - Semantic HTML structure
 - Image alt text validation
 - Link text quality
 - Heading hierarchy
-- Form accessibility
-- Keyboard navigation
-- ARIA attributes
-- Media captions
-- Contrast ratios
-- Language declaration
-- Page structure
-- Responsive design
+- Form accessibility (labels, IDs)
+- Keyboard navigation (onclick handlers)
+- ARIA attributes correctness
+- Media captions (video/iframe)
+- Contrast ratio detection
+- Language declaration (`lang` attribute)
+- Page structure (`<body>`, landmarks)
+- Responsive design (viewport meta tag)
 
-## Access Methods
+Each audit produces a score from 0 to 100 and a letter grade (A–F).
 
-### 🤖 Telegram Bot
-**Telegram:** https://t.me/accessibilityAuditAgentBot
+## Access
 
-Send `/audit https://example.com` to get instant analysis
+### Telegram Bot
 
-### 🌐 Web Interface
-**URL:** https://hexdrive.tech (or localhost:3000 when running locally)
+Send any URL to [@accessibilityAuditAgentBot](https://t.me/accessibilityAuditAgentBot):
 
-Beautiful, accessible web form for auditing websites
+```
+/start              — welcome and help
+/help               — usage instructions
+/status             — check bot status
+https://example.com — send a URL to audit
+```
+
+### Web Interface
+
+Open [https://hexdrive.tech](https://hexdrive.tech), enter a URL and click **Analyze**.
+Results appear at `https://hexdrive.tech/audits/<audit_id>`.
 
 ## How It Works
 
-1. **Dual Interface** - Works via Telegram bot OR web form
-2. **Real-time Analysis** - Fetches & parses HTML instantly
-3. **12 Comprehensive Checks** - Validates WCAG 2.1 & GOST compliance
-4. **Detailed Reports** - Beautiful HTML reports with scoring & recommendations
-5. **Persistent Storage** - All results saved as markdown files
-6. **Shareable Links** - Each audit gets a unique URL for sharing results
+1. The URL is submitted via Telegram or the web form.
+2. A headless Chromium browser (Playwright) fetches the fully rendered page.
+3. BeautifulSoup parses the HTML and runs 12 accessibility checks.
+4. A score is calculated; the report is saved as JSON + Markdown.
+5. An HTML report is generated and served at a unique URL.
 
 ## Tech Stack
 
 - Python 3.12
-- FastAPI (API + static web server)
-- BeautifulSoup4 (HTML parsing)
-- python-telegram-bot
-- Async architecture
-- Hermes Agent framework
+- FastAPI — API + web server
+- Uvicorn — ASGI server
+- Playwright — headless Chromium for page rendering
+- BeautifulSoup4 — HTML parsing
+- python-telegram-bot 20.x — Telegram bot
+- Async architecture (asyncio + threading)
 
 ## Installation
 
-### 1. Clone Repository
+### 1. Clone
+
 ```bash
 git clone https://github.com/web3blind/accessibility-auditor.git
 cd accessibility-auditor
 ```
 
-### 2. Create Virtual Environment
+### 2. Create virtual environment
+
 ```bash
 python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
 ```
 
-### 3. Install Dependencies
+### 3. Install dependencies
+
 ```bash
 pip install -r requirements.txt
+playwright install chromium
 ```
 
-### 4. Set Environment Variables
+### 4. Configure
+
+Create `config.json` (not committed to git — contains credentials):
+
+```json
+{
+  "telegram_token": "YOUR_BOT_TOKEN",
+  "api_host": "127.0.0.1",
+  "api_port": 3000
+}
+```
+
+Or use an environment variable:
+
 ```bash
-export TELEGRAM_BOT_TOKEN="your_token_here"
+export TELEGRAM_BOT_TOKEN="YOUR_BOT_TOKEN"
 ```
 
-### 5. Run Combined Bot + API
+### 5. Run
+
 ```bash
 python3 -u bot_final.py
 ```
 
 This starts:
-- ✅ Telegram Bot (async polling)
-- ✅ Web API on http://localhost:3000
-- ✅ Web Interface at http://localhost:3000
-
-## Usage
-
-### Via Telegram
-```
-/start              - Show help
-/audit https://...  - Audit a website
-(or just send a URL) - Auto-detects URLs
-```
-
-### Via Web
-1. Go to http://localhost:3000
-2. Enter website URL
-3. Click "Start Audit"
-4. View beautiful report with detailed analysis
+- Telegram Bot (async polling)
+- Web API on http://localhost:3000
+- Web Interface at http://localhost:3000
 
 ## File Structure
+
 ```
 accessibility-auditor/
-├── bot_final.py          # Combined Telegram bot + FastAPI server
-├── auditor.py            # Core 12 accessibility checks
-├── storage.py            # Save/load audit results
-├── report_generator.py    # Generate beautiful HTML reports
-├── api.py                # FastAPI endpoints (reference)
+├── bot_final.py         # Combined Telegram bot + FastAPI server
+├── auditor.py           # Core accessibility checks
+├── fetch_page.py        # Headless browser page fetcher (Playwright subprocess)
+├── storage.py           # Save/load audit results (JSON + Markdown)
+├── report_generator.py  # Generate HTML audit reports
 ├── web/
-│   └── index.html        # Web form interface
-├── audits/               # Stored audit results (.json + .md)
-├── requirements.txt      # Python dependencies
-└── README.md             # This file
+│   └── index.html       # Web form interface
+├── requirements.txt     # Python dependencies
+├── nginx.conf           # nginx reverse proxy config
+├── keep-alive.sh        # Cron script to restart bot if it crashes
+└── README.md
 ```
 
-## Example Results
+## Output Formats
 
-Each audit generates:
-1. **JSON report** - Machine-readable data
-2. **HTML report** - Beautiful interactive page
-3. **Markdown report** - Readable text format
+Each audit produces:
+
+1. **JSON** — machine-readable data (`audits/audit_<id>.json`)
+2. **Markdown** — plain text report (`audits/audit_<id>.md`)
+3. **HTML** — interactive web report at `https://hexdrive.tech/audits/<id>`
 
 ## Deployment
 
-### Quick Start (Self-hosted)
+See **DEPLOYMENT.md** for full server setup instructions.
 
-See **DEPLOYMENT.md** for full instructions.
+**Quick reference:**
 
-**TL;DR:**
 ```bash
-# 1. nginx + Let's Encrypt
+# 1. Set up nginx + TLS
 sudo cp nginx.conf /etc/nginx/sites-available/hexdrive.tech
 sudo certbot certonly --nginx -d hexdrive.tech
 
-# 2. Run bot
+# 2. Run the bot
 source venv/bin/activate
 nohup python3 bot_final.py >> bot.log 2>&1 &
 
-# 3. Keep-alive cronjob
+# 3. Add keep-alive cron job
 chmod +x keep-alive.sh
-crontab -e  # Add: */1 * * * * ~/.hermes/agents/accessibility-auditor/keep-alive.sh
+crontab -e  # Add: */1 * * * * /path/to/keep-alive.sh
 ```
 
-Then:
-1. Point hexdrive.tech DNS to your server IP
-2. Visit https://hexdrive.tech
-3. Test bot: `/audit https://example.com`
+Point `hexdrive.tech` DNS to your server IP, then visit https://hexdrive.tech.
 
-## Built With
+## Security
 
-@NousResearch Hermes Agent Framework
+- Bot token is stored in `config.json` (excluded from git via `.gitignore`)
+- Audit results are stored locally and not public by default
+- All user input is validated before processing
 
-Real problem. Real solution.
+---
+
+Built with [Hermes Agent](https://nousresearch.com) · Real problem. Real solution.

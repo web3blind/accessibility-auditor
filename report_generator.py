@@ -6,7 +6,7 @@ Converts audit reports to beautiful, accessible HTML
 
 from typing import Dict
 from datetime import datetime
-import html
+import html as html_module
 
 
 class ReportGenerator:
@@ -367,10 +367,10 @@ class ReportGenerator:
 """
                 for issue in issues:
                     severity = issue.get('severity', 'info')
-                    title = html.escape(issue.get('title', 'Unknown Issue'))
-                    description = html.escape(issue.get('description', ''))
-                    recommendation = html.escape(issue.get('recommendation', ''))
-                    element = html.escape(issue.get('element', ''))
+                    title = html_module.escape(issue.get('title') or 'Unknown Issue')
+                    description = html_module.escape(issue.get('description') or '')
+                    recommendation = html_module.escape(issue.get('recommendation') or '')
+                    element = html_module.escape(issue.get('element') or '')
                     
                     output = f"""
                 <article class="issue {severity}">
