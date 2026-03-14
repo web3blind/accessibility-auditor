@@ -144,63 +144,63 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Save result
         audit_id = storage.save_audit(audit_result)
-        audit_link = f\"https://hexdrive.tech/audits/{audit_id}\"
+        audit_link = f"https://hexdrive.tech/audits/{audit_id}"
         
         # Build comprehensive report - ONE MESSAGE
-        score = audit_result.get(\"score\", 0)
-        grade = audit_result.get(\"grade\", \"N/A\")
-        total = audit_result.get(\"total_issues\", 0)
-        critical = audit_result.get(\"critical\", 0)
-        warnings = audit_result.get(\"warnings\", 0)
-        info = audit_result.get(\"info\", 0)
+        score = audit_result.get("score", 0)
+        grade = audit_result.get("grade", "N/A")
+        total = audit_result.get("total_issues", 0)
+        critical = audit_result.get("critical", 0)
+        warnings = audit_result.get("warnings", 0)
+        info = audit_result.get("info", 0)
         domain = urlparse(user_message).netloc or user_message
         
-        score_emoji = \"🟢\" if score >= 80 else \"🟡\" if score >= 60 else \"🔴\"
+        score_emoji = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
         
         # Start report
-        report = f\"{score_emoji} *Accessibility Audit Report*\\n\\n\"
-        report += f\"🌐 *Domain:* {domain}\\n\"
-        report += f\"⭐️ *Score:* {score}/100 ({grade})\\n\\n\"
-        report += f\"🔗 *Watch on the web:*\\n\"
-        report += f\"{audit_link}\\n\\n\"
-        report += f\"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n\\n\"
+        report = f"{score_emoji} *Accessibility Audit Report*\n\n"
+        report += f"🌐 *Domain:* {domain}\n"
+        report += f"⭐️ *Score:* {score}/100 ({grade})\n\n"
+        report += f"🔗 *Watch on the web:*\n"
+        report += f"{audit_link}\n\n"
+        report += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         
         # Issues by severity
-        report += f\"📊 *Issues by Severity:*\\n\"
-        report += f\"🔴 Critical: {critical}\\n\"
-        report += f\"🟡 Warnings: {warnings}\\n\"
-        report += f\"ℹ️ Info: {info}\\n\"
-        report += f\"*Total Issues: {total}*\\n\\n\"
+        report += f"📊 *Issues by Severity:*\n"
+        report += f"🔴 Critical: {critical}\n"
+        report += f"🟡 Warnings: {warnings}\n"
+        report += f"ℹ️ Info: {info}\n"
+        report += f"*Total Issues: {total}*\n\n"
         
         # Issues by category
-        issues_by_cat = audit_result.get(\"issues_by_category\", {})
+        issues_by_cat = audit_result.get("issues_by_category", {})
         if issues_by_cat:
             for category, issues in issues_by_cat.items():
-                report += f\"*{category}* ({len(issues)} issues)\\n\"
-                report += f\"────────────────────────────────────────\\n\\n\"
+                report += f"*{category}* ({len(issues)} issues)\n"
+                report += f"────────────────────────────────────────\n\n"
                 
                 for issue in issues:
                     severity = issue.get('severity', 'info')
-                    emoji = \"🔴\" if severity == 'critical' else \"🟡\" if severity == 'warning' else \"🔵\"
+                    emoji = "🔴" if severity == 'critical' else "🟡" if severity == 'warning' else "🔵"
                     title = issue.get('title', 'Unknown')
                     description = issue.get('description', '')
                     recommendation = issue.get('recommendation', '')
                     
-                    report += f\"{emoji} *{title}*\\n\"
+                    report += f"{emoji} *{title}*\n"
                     if description:
-                        report += f\"   {description}\\n\"
+                        report += f"   {description}\n"
                     if recommendation:
-                        report += f\"   💡 {recommendation}\\n\"
-                    report += \"\\n\"
+                        report += f"   💡 {recommendation}\n"
+                    report += "\n"
         else:
-            report += \"✅ *No issues found!* This website is very accessible.\\n\\n\"
+            report += "✅ *No issues found!* This website is very accessible.\n\n"
         
         # Truncate if too long (Telegram limit)
         if len(report) > 4000:
-            report = report[:3900] + f\"\\n\\n_See full report on web_\"
+            report = report[:3900] + f"\n\n_See full report on web_"
         
         # Send ONE comprehensive report
-        await processing_msg.edit_text(report, parse_mode=\"Markdown\")
+        await processing_msg.edit_text(report, parse_mode="Markdown")
         
     except Exception as e:
         logger.error(f"Audit error: {str(e)}", exc_info=True)
