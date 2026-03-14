@@ -6,6 +6,7 @@ Converts audit reports to beautiful, accessible HTML
 
 from typing import Dict
 from datetime import datetime
+import html
 
 
 class ReportGenerator:
@@ -366,24 +367,25 @@ class ReportGenerator:
 """
                 for issue in issues:
                     severity = issue.get('severity', 'info')
-                    title = issue.get('title', 'Unknown Issue')
-                    description = issue.get('description', '')
-                    recommendation = issue.get('recommendation', '')
-                    element = issue.get('element', '')
+                    title = html.escape(issue.get('title', 'Unknown Issue'))
+                    description = html.escape(issue.get('description', ''))
+                    recommendation = html.escape(issue.get('recommendation', ''))
+                    element = html.escape(issue.get('element', ''))
                     
-                    html += f"""
+                    output = f"""
                 <article class="issue {severity}">
                     <span class="issue-severity {severity}">{severity.upper()}</span>
                     <h3 class="issue-title">{title}</h3>
                     <p class="issue-description">{description}</p>
 """
                     if element:
-                        html += f'                    <p class="issue-description"><strong>Element:</strong> {element}</p>\n'
+                        output += f'                    <p class="issue-description"><strong>Element:</strong> <code>{element}</code></p>\n'
                     
                     if recommendation:
-                        html += f'                    <div class="issue-recommendation">{recommendation}</div>\n'
+                        output += f'                    <div class="issue-recommendation">{recommendation}</div>\n'
                     
-                    html += "                </article>\n"
+                    output += "                </article>\n"
+                    html += output
                 
                 html += "            </section>\n"
         else:
