@@ -23,10 +23,11 @@ class AuditStorage:
         """Generate unique audit ID"""
         return str(uuid4())[:8]
     
-    def save_audit(self, report: Dict, is_public: bool = False) -> str:
+    def save_audit(self, url: str, report: Dict, is_public: bool = False) -> str:
         """
         Save audit report as markdown
         Args:
+            url: website URL
             report: audit report dict
             is_public: whether to show in public audits list
         Returns: audit ID
@@ -47,6 +48,10 @@ class AuditStorage:
             json.dump(report, f, indent=2, ensure_ascii=False)
         
         return audit_id
+    
+    def get_audit_path(self, audit_id: str) -> Path:
+        """Get markdown file path for audit"""
+        return self.storage_dir / f"audit_{audit_id}.md"
     
     def get_audit(self, audit_id: str) -> Optional[Dict]:
         """Get audit report by ID"""
