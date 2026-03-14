@@ -131,21 +131,21 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Save result
         audit_id = storage.save_audit(user_message, audit_result)
         
-        # Build summary message
+        # Build complete summary message with domain and rating
         score = audit_result.get("score", 0)
         issues = audit_result.get("issues", {})
+        domain = urlparse(user_message).netloc or user_message
         
-        summary = (
-            f"✅ *Audit Complete*\n\n"
-            f"🎯 *Score: {score}%*\n\n"
-            f"📊 *Issues Found:*\n"
-        )
+        summary = f"🔍 *{domain}*\n"
+        summary += f"⭐️ *Rating: {score}%*\n\n"
+        summary += "📊 *Issues Found:*\n"
         
         for category, count in issues.items():
             if count > 0:
                 summary += f"• {category.title()}: {count}\n"
         
-        summary += f"\n🌐 *Watch on the web:* https://hexdrive.tech/audits/{audit_id}"
+        summary += f"\n🌐 *View full report:*\n"
+        summary += f"https://hexdrive.tech/audits/{audit_id}"
         
         await processing_msg.edit_text(summary, parse_mode="Markdown")
         
@@ -309,8 +309,29 @@ async def root():
             document.querySelector('form').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const url = document.getElementById('url').value;
-                // Redirect to Telegram bot
-                window.location.href = 'https://t.me/accessibilityAuditAgentBot?start=' + encodeURIComponent(url);
+                const btn = e.target.querySelector('button');
+                btn.disabled = true;
+                btn.textContent = 'Analyzing...';
+                
+                try {
+                    const response = await fetch('/api/audit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url })
+                    });
+                    const data = await response.json();
+                    if (response.ok) {
+                        window.location.href = data.url;
+                    } else {
+                        alert('Error: ' + (data.message || 'Unknown error'));
+                        btn.disabled = false;
+                        btn.textContent = 'Analyze Website';
+                    }
+                } catch (err) {
+                    alert('Error: ' + err.message);
+                    btn.disabled = false;
+                    btn.textContent = 'Analyze Website';
+                }
             });
         </script>
     </body>
