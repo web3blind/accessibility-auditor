@@ -1,0 +1,6 @@
+{
+  "telegram_token": "8752537543:AAH8UwykeRvTF6AMPaKvdnpppcdg7nUO460",
+  "api_host": "127.0.0.1",
+  "api_port": 3000,
+  "fortytwo_api": "https://app.fortytwo.network/api"
+}
