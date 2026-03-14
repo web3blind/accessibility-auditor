@@ -390,7 +390,7 @@ async def get_audit(audit_id: str):
         if not result:
             return HTMLResponse("<h1>404 - Audit not found</h1>", status_code=404)
         
-        return HTMLResponse(content=report_gen.generate_html_report(audit_id, result))
+        return HTMLResponse(content=report_gen.generate_html(result))
     except Exception as e:
         logger.error(f"Error retrieving audit {audit_id}: {str(e)}")
         return HTMLResponse(f"<h1>Error: {str(e)}</h1>", status_code=500)
