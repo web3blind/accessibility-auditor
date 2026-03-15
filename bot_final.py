@@ -82,9 +82,17 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
     user = update.effective_user
     await update.message.reply_text(
-        "🔍 *Accessibility Auditor*\n\n"
-        "Hi! Send me a website URL and I'll analyze it for accessibility issues.\n\n"
-        "Example: https://example.com"
+        "♿ *Accessibility Auditor*\n\n"
+        "Send me a website URL — I'll check it for accessibility issues.\n\n"
+        "Accessibility matters for:\n"
+        "👁 Blind and visually impaired users\n"
+        "🦽 People with disabilities\n"
+        "🤖 AI agents and web scrapers — they read your site as text, just like a screen reader\n"
+        "🔍 Search engine crawlers (SEO)\n\n"
+        "Poor markup = invisible content for all of the above.\n\n"
+        "Example: https://example.com\n\n"
+        "Web: https://hexdrive.tech",
+        parse_mode="Markdown"
     )
 
 
@@ -94,8 +102,11 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📋 *How to use Accessibility Auditor:*\n\n"
         "1. Send any website URL\n"
         "2. Bot analyzes accessibility\n"
-        "3. Get detailed report\n"
+        "3. Get detailed report with score\n"
         "4. View results on web: https://hexdrive.tech\n\n"
+        "*Why accessibility matters:*\n"
+        "Not just for people with disabilities — AI agents, chatbots, and web scrapers "
+        "all parse your site as plain text. Bad markup = broken experience for humans and machines alike.\n\n"
         "*Commands:*\n"
         "/start - Welcome message\n"
         "/help - This message\n"
