@@ -23,7 +23,18 @@ env/
 # Environment
 .env
 .env.local
-
+config.json
+wallets_x402.json
+gen_wallets.py
+x402_config.py
+x402_client_agent.py
+*.log
+*.log.*
+audits/
+__pycache__/
+*.pyc
+venv/
+.playwright/
 # Secrets & config with credentials
 config.json
 
