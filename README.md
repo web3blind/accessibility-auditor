@@ -1,28 +1,81 @@
 # Accessibility Auditor
 
-Web accessibility analysis tool for WCAG 2.1 and GOST R 52872-2019 compliance.
-Built for blind and low-vision users.
+WCAG 2.1 accessibility audit service for websites — with pay-per-use via [x402](https://x402.org) protocol.
 
-🤖 **[Telegram Bot: @accessibilityAuditAgentBot](https://t.me/accessibilityAuditAgentBot)** | 🌐 **[Web Interface: hexdrive.tech](https://hexdrive.tech)**
+Built by a blind developer for blind and low-vision users.
 
-## Features
+🤖 **[Telegram Bot: @accessibilityAuditAgentBot](https://t.me/accessibilityAuditAgentBot)** | 🌐 **[Web: hexdrive.tech](https://hexdrive.tech)**
 
-12 automated accessibility checks:
+## What It Does
+
+Audits any website for WCAG 2.1 accessibility compliance. Returns a score (0–100), letter grade (A–F), and detailed issue breakdown across 12 categories:
 
 - Semantic HTML structure
-- Image alt text validation
+- Image alt text
 - Link text quality
 - Heading hierarchy
 - Form accessibility (labels, IDs)
-- Keyboard navigation (onclick handlers)
-- ARIA attributes correctness
+- Keyboard navigation
+- ARIA attributes
 - Media captions (video/iframe)
-- Contrast ratio detection
-- Language declaration (`lang` attribute)
-- Page structure (`<body>`, landmarks)
-- Responsive design (viewport meta tag)
+- Contrast ratio
+- Language declaration
+- Page structure and landmarks
+- Responsive design (viewport)
 
-Each audit produces a score from 0 to 100 and a letter grade (A–F).
+## x402 Payment Integration
+
+AI agents and developers can pay per audit via the [x402 protocol](https://x402.org) — no API keys, no subscriptions.
+
+```
+POST https://hexdrive.tech/api/audit/paid
+Payment: 0.10 USDC on Base Sepolia (testnet)
+Network: eip155:84532
+Facilitator: https://x402.org/facilitator
+```
+
+Discovery endpoint:
+```
+GET https://hexdrive.tech/api/x402/info
+```
+
+Free audits are available via the web interface only (not via API).
+
+### AgentKit Integration
+
+Any [AgentKit](https://github.com/coinbase/agentkit)-powered agent can call this service directly:
+
+```python
+from agentkit_action_provider import accessibility_audit_action_provider
+from coinbase_agentkit import AgentKit, AgentKitConfig
+
+agent_kit = AgentKit(AgentKitConfig(
+    wallet_provider=wallet_provider,
+    action_providers=[accessibility_audit_action_provider()]
+))
+# Agent can now call: accessibility_paid_audit(url="https://example.com")
+```
+
+### Python client example
+
+```python
+from eth_account import Account
+from x402.client import x402Client
+from x402.http.clients.httpx import x402HttpxClient
+from x402.mechanisms.evm.exact.client import ExactEvmScheme
+from x402.mechanisms.evm.signers import EthAccountSigner
+
+account = Account.from_key("YOUR_PRIVATE_KEY")
+client = x402Client()
+client.register("eip155:84532", ExactEvmScheme(signer=EthAccountSigner(account)))
+
+async with x402HttpxClient(client) as http:
+    response = await http.post(
+        "https://hexdrive.tech/api/audit/paid",
+        json={"url": "https://example.com"},
+    )
+    print(response.json())  # score, grade, issues, report_url
+```
 
 ## Access
 
@@ -32,8 +85,6 @@ Send any URL to [@accessibilityAuditAgentBot](https://t.me/accessibilityAuditAge
 
 ```
 /start              — welcome and help
-/help               — usage instructions
-/status             — check bot status
 https://example.com — send a URL to audit
 ```
 
@@ -44,126 +95,83 @@ Results appear at `https://hexdrive.tech/audits/<audit_id>`.
 
 ## How It Works
 
-1. The URL is submitted via Telegram or the web form.
-2. A headless Chromium browser (Playwright) fetches the fully rendered page.
-3. BeautifulSoup parses the HTML and runs 12 accessibility checks.
-4. A score is calculated; the report is saved as JSON + Markdown.
-5. An HTML report is generated and served at a unique URL.
+1. Request arrives via Telegram, web form, or paid API (`/api/audit/paid`).
+2. For paid requests: x402 middleware intercepts, requires 0.10 USDC payment via EIP-3009.
+3. On payment confirmation: headless Chromium (Playwright) fetches the full page.
+4. BeautifulSoup runs 12 accessibility checks.
+5. Score + HTML report generated, returned immediately for paid requests.
 
 ## Tech Stack
 
-- Python 3.12
-- FastAPI — API + web server
-- Uvicorn — ASGI server
-- Playwright — headless Chromium for page rendering
-- BeautifulSoup4 — HTML parsing
-- python-telegram-bot 20.x — Telegram bot
-- Async architecture (asyncio + threading)
+- **Python 3.12** / FastAPI / Uvicorn
+- **Playwright** — headless Chromium for full page rendering
+- **BeautifulSoup4** — HTML parsing and accessibility checks
+- **x402** (`pip install x402[evm,fastapi]`) — HTTP payment protocol
+- **python-telegram-bot 20.x** — Telegram integration
+- **nginx** — reverse proxy with TLS
+- **coinbase-agentkit** — AgentKit action provider
 
 ## Installation
-
-### 1. Clone
 
 ```bash
 git clone https://github.com/web3blind/accessibility-auditor.git
 cd accessibility-auditor
-```
-
-### 2. Create virtual environment
-
-```bash
 python3 -m venv venv
 source venv/bin/activate
-```
-
-### 3. Install dependencies
-
-```bash
 pip install -r requirements.txt
 playwright install chromium
 ```
 
-### 4. Configure
-
-Create `config.json` (not committed to git — contains credentials):
-
-```json
-{
-  "telegram_token": "YOUR_BOT_TOKEN",
-  "api_host": "127.0.0.1",
-  "api_port": 3000
-}
-```
-
-Or use an environment variable:
+### Configure
 
 ```bash
-export TELEGRAM_BOT_TOKEN="YOUR_BOT_TOKEN"
+export TELEGRAM_BOT_TOKEN="your_token"
+export X402_SERVER_ADDRESS="your_wallet_address"   # receives payments
+# Optional:
+export X402_NETWORK="eip155:84532"                 # default: Base Sepolia
+export X402_FACILITATOR_URL="https://x402.org/facilitator"
 ```
 
-### 5. Run
+### Run
 
 ```bash
-python3 -u bot_final.py
+python3 bot_final.py
 ```
 
-This starts:
-- Telegram Bot (async polling)
-- Web API on http://localhost:3000
-- Web Interface at http://localhost:3000
+Starts Telegram bot + FastAPI server on `http://localhost:3000`.
 
 ## File Structure
 
 ```
 accessibility-auditor/
-├── bot_final.py         # Combined Telegram bot + FastAPI server
-├── auditor.py           # Core accessibility checks
-├── fetch_page.py        # Headless browser page fetcher (Playwright subprocess)
-├── storage.py           # Save/load audit results (JSON + Markdown)
-├── report_generator.py  # Generate HTML audit reports
-├── web/
-│   └── index.html       # Web form interface
-├── requirements.txt     # Python dependencies
-├── nginx.conf           # nginx reverse proxy config
-├── keep-alive.sh        # Cron script to restart bot if it crashes
-└── README.md
+├── bot_final.py                  # Telegram bot + FastAPI server + x402 middleware
+├── agentkit_action_provider.py   # AgentKit action provider for AI agents
+├── auditor.py                    # Core WCAG 2.1 checks
+├── fetch_page.py                 # Playwright subprocess page fetcher
+├── storage.py                    # Audit result persistence
+├── report_generator.py           # HTML report generator
+├── requirements.txt
+├── nginx.conf
+└── keep-alive.sh
 ```
 
-## Output Formats
+## API Reference
 
-Each audit produces:
+| Endpoint | Method | Auth | Description |
+|---|---|---|---|
+| `/api/audit/paid` | POST | x402 (0.10 USDC) | Full audit, returns JSON immediately |
+| `/api/x402/info` | GET | none | Payment discovery info for agents |
+| `/api/audit` | POST | none* | Submit audit (web UI only) |
+| `/api/audit/{id}/status` | GET | none | Poll audit status + result |
+| `/audits/{id}` | GET | none | HTML report |
 
-1. **JSON** — machine-readable data (`audits/audit_<id>.json`)
-2. **Markdown** — plain text report (`audits/audit_<id>.md`)
-3. **HTML** — interactive web report at `https://hexdrive.tech/audits/<id>`
-
-## Deployment
-
-See **DEPLOYMENT.md** for full server setup instructions.
-
-**Quick reference:**
-
-```bash
-# 1. Set up nginx + TLS
-sudo cp nginx.conf /etc/nginx/sites-available/hexdrive.tech
-sudo certbot certonly --nginx -d hexdrive.tech
-
-# 2. Run the bot
-source venv/bin/activate
-nohup python3 bot_final.py >> bot.log 2>&1 &
-
-# 3. Add keep-alive cron job
-chmod +x keep-alive.sh
-crontab -e  # Add: */1 * * * * /path/to/keep-alive.sh
-```
-
-Point `hexdrive.tech` DNS to your server IP, then visit https://hexdrive.tech.
+*Free endpoint checks `Referer: hexdrive.tech` — not available for external API calls.
 
 ## Security
 
-- Bot token is stored in `config.json` (excluded from git via `.gitignore`)
-- Audit results are stored locally and not public by default
-- All user input is validated before processing
+- No secrets in repository — `wallets_x402.json`, `.env`, `config.json` are all gitignored
+- Audit results stored locally, not public by default
+- All input validated before processing
 
 ---
 

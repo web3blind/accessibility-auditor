@@ -27,10 +27,23 @@ from urllib.parse import urlparse
 from auditor import audit_website
 from storage import AuditStorage
 from report_generator import ReportGenerator
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 import uvicorn
+
+# x402 payment integration
+try:
+    from x402.http import FacilitatorConfig, HTTPFacilitatorClient, PaymentOption
+    from x402.http.middleware.fastapi import PaymentMiddlewareASGI
+    from x402.http.types import RouteConfig
+    from x402.mechanisms.evm.exact import ExactEvmServerScheme
+    from x402.server import x402ResourceServer
+    X402_ENABLED = True
+except ImportError as _x402_err:
+    X402_ENABLED = False
+    logger_pre = logging.getLogger(__name__)
+    logger_pre.warning(f"x402 not available: {_x402_err}")
 
 # Load config
 CONFIG_PATH = Path("/root/.hermes/agents/accessibility-auditor/config.json")
@@ -221,7 +234,42 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # FastAPI setup
-app = FastAPI()
+app = FastAPI(
+    title="Accessibility Auditor",
+    description="WCAG 2.1 accessibility auditing. Free: POST /api/audit. Paid via x402: POST /api/audit/paid",
+    version="2.0.0"
+)
+
+# x402 setup - payment middleware for /api/audit/paid
+_X402_SERVER_ADDRESS = os.getenv("X402_SERVER_ADDRESS", "0x69a01903E635587C3e28DaAfF5DB82B369447e76")
+_X402_NETWORK = os.getenv("X402_NETWORK", "eip155:84532")  # Base Sepolia (public x402.org facilitator only supports testnet)
+_X402_PRICE = "$0.10"
+_X402_FACILITATOR = os.getenv("X402_FACILITATOR_URL", "https://x402.org/facilitator")
+
+if X402_ENABLED:
+    try:
+        _x402_facilitator = HTTPFacilitatorClient(FacilitatorConfig(url=_X402_FACILITATOR))
+        _x402_srv = x402ResourceServer(_x402_facilitator)
+        _x402_srv.register(_X402_NETWORK, ExactEvmServerScheme())
+        _x402_routes = {
+            "POST /api/audit/paid": RouteConfig(
+                accepts=[PaymentOption(
+                    scheme="exact",
+                    pay_to=_X402_SERVER_ADDRESS,
+                    price=_X402_PRICE,
+                    network=_X402_NETWORK,
+                )],
+                mime_type="application/json",
+                description="Accessibility audit (WCAG 2.1) — pay per audit",
+            ),
+        }
+        app.add_middleware(PaymentMiddlewareASGI, routes=_x402_routes, server=_x402_srv)
+        logging.getLogger(__name__).info(
+            f"x402 enabled: address={_X402_SERVER_ADDRESS}, price={_X402_PRICE}, network={_X402_NETWORK}"
+        )
+    except Exception as _xe:
+        X402_ENABLED = False
+        logging.getLogger(__name__).warning(f"x402 setup failed: {_xe}")
 
 
 @app.get("/")
@@ -508,8 +556,24 @@ class AuditRequest(BaseModel):
 
 
 @app.post("/api/audit")
-async def submit_audit(request: AuditRequest):
-    """API endpoint: immediately returns audit_id, runs audit in background"""
+async def submit_audit(request: AuditRequest, raw_request: Request):
+    """Free audit — only accessible from the website UI (not for external agents/API clients).
+    For programmatic access use POST /api/audit/paid (x402, 0.10 USDC on Base Mainnet).
+    """
+    # Only allow requests originating from hexdrive.tech itself
+    referer = raw_request.headers.get("referer", "")
+    origin = raw_request.headers.get("origin", "")
+    allowed_host = "hexdrive.tech"
+    if not any(allowed_host in h for h in [referer, origin]):
+        return JSONResponse(
+            {
+                "error": "Free audit is only available via the website UI.",
+                "paid_endpoint": "POST /api/audit/paid",
+                "docs": "https://hexdrive.tech/api/x402/info",
+            },
+            status_code=403,
+        )
+
     url = request.url.strip()
 
     if not is_valid_url(url):
@@ -538,9 +602,69 @@ async def submit_audit(request: AuditRequest):
 
 @app.get("/api/audit/{audit_id}/status")
 async def audit_status(audit_id: str):
-    """Check if audit is ready"""
+    """Check if audit is ready, and return full result if so (for polling)"""
     result = storage.get_audit(audit_id)
-    return {"ready": result is not None}
+    if result is None:
+        return {"status": "pending", "ready": False}
+    if result.get("error"):
+        return {"status": "error", "error": result["error"]}
+    return {
+        "status": "complete",
+        "ready": True,
+        "audit_id": audit_id,
+        "url": result.get("url"),
+        "score": result.get("score"),
+        "grade": result.get("grade"),
+        "total_issues": result.get("total_issues"),
+        "critical": result.get("critical"),
+        "warnings": result.get("warnings"),
+        "info": result.get("info"),
+        "issues_by_category": result.get("issues_by_category", {}),
+    }
+
+
+@app.post("/api/audit/paid")
+async def submit_paid_audit(request: AuditRequest):
+    """
+    Paid accessibility audit via x402 (0.10 USDC on Base Mainnet).
+    x402 middleware intercepts this route — client must pay before getting response.
+    On successful payment, runs full audit and returns JSON report.
+    """
+    url = request.url.strip()
+    if not is_valid_url(url):
+        return JSONResponse({"error": "Invalid URL format"}, status_code=400)
+
+    try:
+        result = await audit_website(url)
+        audit_id = storage.generate_id()
+        storage.save_audit_with_id(audit_id, result)
+        return {
+            "paid": True,
+            "audit_id": audit_id,
+            "report_url": f"https://hexdrive.tech/audits/{audit_id}",
+            "payment_network": _X402_NETWORK if X402_ENABLED else "disabled",
+            **result
+        }
+    except Exception as e:
+        logger.error(f"Paid audit error for {url}: {e}")
+        return JSONResponse({"error": f"Audit failed: {e}"}, status_code=500)
+
+
+@app.get("/api/x402/info")
+async def x402_info():
+    """x402 payment info — discovery endpoint for AI agents"""
+    return {
+        "enabled": X402_ENABLED,
+        "paid_endpoint": "POST /api/audit/paid",
+        "price": _X402_PRICE if X402_ENABLED else None,
+        "network": _X402_NETWORK if X402_ENABLED else None,
+        "network_name": "Base Mainnet" if _X402_NETWORK == "eip155:8453" else "Base Sepolia (testnet)",
+        "pay_to": _X402_SERVER_ADDRESS if X402_ENABLED else None,
+        "facilitator": _X402_FACILITATOR if X402_ENABLED else None,
+        "token": "USDC" if _X402_NETWORK == "eip155:8453" else "testUSDC",
+        "token_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" if _X402_NETWORK == "eip155:8453" else "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        "description": "Accessibility audit service. WCAG 2.1 compliance check. Pay per request via x402. Free audits available at https://hexdrive.tech (website only).",
+    }
 
 
 class UvicornServer(uvicorn.Server):
@@ -583,6 +707,14 @@ def run_telegram_bot():
     while retry_count < max_retries:
         try:
             logger.info("Initializing Telegram bot...")
+            # Ensure there's an event loop in this thread (needed when uvicorn runs in another thread)
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    raise RuntimeError("loop closed")
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
             application = Application.builder().token(TOKEN).build()
             
             # Add handlers
