@@ -291,31 +291,59 @@ app = FastAPI(
 )
 
 # x402 setup - payment middleware for /api/audit/paid
-_X402_SERVER_ADDRESS = os.getenv("X402_SERVER_ADDRESS", "0x69a01903E635587C3e28DaAfF5DB82B369447e76")
-_X402_NETWORK = os.getenv("X402_NETWORK", "eip155:84532")  # Base Sepolia (public x402.org facilitator only supports testnet)
+_X402_SERVER_ADDRESS = os.getenv("EVM_SERVER_ADDRESS", os.getenv("X402_SERVER_ADDRESS", "0x69a01903E635587C3e28DaAfF5DB82B369447e76"))
 _X402_PRICE = "$0.10"
 _X402_FACILITATOR = os.getenv("X402_FACILITATOR_URL", "https://x402.org/facilitator")
+
+# Supported networks
+_X402_NETWORKS = {
+    "base_sepolia": {
+        "name": "Base Sepolia (testnet)",
+        "evm_network": "eip155:84532",
+        "chain_id": 84532,
+        "usdc_is_native": False,
+    },
+    "arc_testnet": {
+        "name": "Arc Testnet (Circle L1)",
+        "evm_network": "eip155:5042002",
+        "chain_id": 5042002,
+        "usdc_is_native": True,
+    },
+}
+_X402_ACTIVE = os.getenv("X402_NETWORK_KEY", "arc_testnet")
+_X402_NETWORK = _X402_NETWORKS[_X402_ACTIVE]["evm_network"]
 
 if X402_ENABLED:
     try:
         _x402_facilitator = HTTPFacilitatorClient(FacilitatorConfig(url=_X402_FACILITATOR))
         _x402_srv = x402ResourceServer(_x402_facilitator)
-        _x402_srv.register(_X402_NETWORK, ExactEvmServerScheme())
+
+        # Register networks supported by the facilitator
+        # NOTE: x402.org facilitator currently only supports Base Sepolia & Base Mainnet
+        # Arc Testnet support is pending — we track it in _X402_NETWORKS for info
+        _x402_facilitator_networks = ["base_sepolia"]  # Only register what facilitator supports
+        _x402_payment_options = []
+        for _nk in _x402_facilitator_networks:
+            _nv = _X402_NETWORKS[_nk]
+            _x402_srv.register(_nv["evm_network"], ExactEvmServerScheme())
+            _x402_payment_options.append(PaymentOption(
+                scheme="exact",
+                pay_to=_X402_SERVER_ADDRESS,
+                price=_X402_PRICE,
+                network=_nv["evm_network"],
+            ))
+
         _x402_routes = {
             "POST /api/audit/paid": RouteConfig(
-                accepts=[PaymentOption(
-                    scheme="exact",
-                    pay_to=_X402_SERVER_ADDRESS,
-                    price=_X402_PRICE,
-                    network=_X402_NETWORK,
-                )],
+                accepts=_x402_payment_options,
                 mime_type="application/json",
-                description="Accessibility audit (WCAG 2.1) — pay per audit",
+                description="Accessibility audit (WCAG 2.1) — pay with USDC on Base Sepolia or Arc Testnet",
             ),
         }
         app.add_middleware(PaymentMiddlewareASGI, routes=_x402_routes, server=_x402_srv)
         logging.getLogger(__name__).info(
-            f"x402 enabled: address={_X402_SERVER_ADDRESS}, price={_X402_PRICE}, network={_X402_NETWORK}"
+            f"x402 enabled: address={_X402_SERVER_ADDRESS}, price={_X402_PRICE}, "
+            f"networks={list(_X402_NETWORKS.keys())}"
         )
     except Exception as _xe:
         X402_ENABLED = False
@@ -703,17 +731,33 @@ async def submit_paid_audit(request: AuditRequest):
 @app.get("/api/x402/info")
 async def x402_info():
     """x402 payment info — discovery endpoint for AI agents"""
+    if not X402_ENABLED:
+        return {"enabled": False, "reason": "x402 SDK not available"}
+
+    networks_info = {}
+    for nk, nv in _X402_NETWORKS.items():
+        networks_info[nk] = {
+            "name": nv["name"],
+            "evm_network": nv["evm_network"],
+            "chain_id": nv["chain_id"],
+            "usdc_is_native": nv["usdc_is_native"],
+        }
+
     return {
-        "enabled": X402_ENABLED,
+        "enabled": True,
         "paid_endpoint": "POST /api/audit/paid",
-        "price": _X402_PRICE if X402_ENABLED else None,
-        "network": _X402_NETWORK if X402_ENABLED else None,
-        "network_name": "Base Mainnet" if _X402_NETWORK == "eip155:8453" else "Base Sepolia (testnet)",
-        "pay_to": _X402_SERVER_ADDRESS if X402_ENABLED else None,
-        "facilitator": _X402_FACILITATOR if X402_ENABLED else None,
-        "token": "USDC" if _X402_NETWORK == "eip155:8453" else "testUSDC",
-        "token_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" if _X402_NETWORK == "eip155:8453" else "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-        "description": "Accessibility audit service. WCAG 2.1 compliance check. Pay per request via x402. Free audits available at https://hexdrive.tech (website only).",
+        "price": _X402_PRICE,
+        "pay_to": _X402_SERVER_ADDRESS,
+        "facilitator": _X402_FACILITATOR,
+        "active_network": _X402_ACTIVE,
+        "networks": networks_info,
+        "erc8004_agent_id": 963,
+        "erc8004_registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+        "description": (
+            "Accessibility Auditor — WCAG 2.1 compliance check with x402 payments. "
+            "Accepts USDC on Base Sepolia (ERC-20) or Arc Testnet (native USDC gas token). "
+            "ERC-8004 registered AI agent on Arc Network."
+        ),
     }
 
 

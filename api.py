@@ -43,13 +43,18 @@ try:
     from x402.server import x402ResourceServer
     x402_server = x402ResourceServer(x402_facilitator)
 
-    # Register all available networks
-    for net_key, net_cfg in NETWORKS.items():
+    # Register networks supported by the x402 facilitator
+    # NOTE: x402.org facilitator only supports Base Sepolia & Base Mainnet currently
+    # Arc Testnet pending facilitator support
+    _facilitator_networks = ["base_sepolia"]
+    for net_key in _facilitator_networks:
+        net_cfg = NETWORKS[net_key]
         x402_server.register(net_cfg["evm_network"], ExactEvmServerScheme())
 
-    # Build payment options for all supported networks
+    # Build payment options for facilitator-supported networks
     payment_options = []
-    for net_key, net_cfg in NETWORKS.items():
+    for net_key in _facilitator_networks:
+        net_cfg = NETWORKS[net_key]
         payment_options.append(
             PaymentOption(
                 scheme="exact",
