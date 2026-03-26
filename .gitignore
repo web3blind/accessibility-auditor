@@ -37,6 +37,12 @@ venv/
 .playwright/
 # Secrets & config with credentials
 config.json
+erc8004_registration.json
+moltbook_credentials.json
+synthesis_apikey.txt
+synthesis_project.json
+synthesis_registration.json
+synthesis_transfer.json
 
 # Audit results
 audits/

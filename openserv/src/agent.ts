@@ -1,3 +1,6 @@
+import * as dotenv from 'dotenv'
+dotenv.config()
+
 import { Agent, run } from '@openserv-labs/sdk'
 import { z } from 'zod'
 

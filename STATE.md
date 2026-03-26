@@ -1,5 +1,5 @@
 # Accessibility Auditor — Project State
-Last updated: 2026-03-20
+Last updated: 2026-03-26
 
 ## Project
 - Name: Accessibility Auditor
@@ -15,10 +15,30 @@ Last updated: 2026-03-20
 - SSL: Let's Encrypt, valid until 2026-06-14
 - DNS: Cloudflare, A @ → 151.245.136.199 proxied
 
-## Wallets (Base)
-- Client wallet: 0x830D957413EEbC8244C1346e1B86d8408F42F92f (has ETH)
-- Server wallet: 0x69a01903E635587C3e28DaAfF5DB82B369447e76
-- Keys: /root/.hermes/agents/accessibility-auditor/wallets_x402.json (NOT in git)
+## Wallets (Base + Arc)
+- Client wallet: 0x830D957413EEbC8244C1346e1B86d8408F42F92f (has ETH on Base, ~10 USDC on Arc)
+- Server wallet: 0x69a01903E635587C3e28DaAfF5DB82B369447e76 (10 USDC on Arc)
+- Keys: .env (EVM_PRIVATE_KEY) + wallets_x402.json (NOT in git)
+
+## Arc Network Integration (Circle L1)
+- Network: Arc Testnet (Chain ID: 5042002)
+- RPC: https://rpc.testnet.arc.network
+- Explorer: https://testnet.arcscan.app
+- Gas token: USDC (native!) — not ERC-20, USDC IS the gas
+- Faucet: https://faucet.circle.com/
+
+### ERC-8004 AI Agent Identity
+- Agent ID: #963 (AGENT NFT)
+- Registry: 0x8004A818BFB912233c491871b3d84c89A494BD9e (IdentityRegistryUpgradeable)
+- Registration TX: https://testnet.arcscan.app/tx/001f879dcfceaa3fcf8c5ffb9926c78cec4325ae67ab07c45082f1985178408d
+- Agent URI: https://hexdrive.tech/api/x402/info
+- On-chain metadata: name, description, service_url, api_endpoint, payment_protocol, standards, telegram_bot, github, developer
+- Registration info: erc8004_registration.json (NOT in git)
+
+### ERC-8004 Contracts (Arc Testnet)
+- IdentityRegistry:   0x8004A818BFB912233c491871b3d84c89A494BD9e
+- ReputationRegistry: 0x8004B663056A597Dffe9eCcC1965A193B7388713
+- ValidationRegistry: 0x8004Cb1BF31DAf7788923b405b754f57acEB4272
 
 ## ENS / Basenames
 - a11y-auditor.basetest.eth — Base Sepolia testnet ✅
@@ -98,8 +118,9 @@ curl -X POST https://synthesis.devfolio.co/projects \
 
 ## Secrets (NOT in git)
 - wallets_x402.json — кошельки
+- .env — TELEGRAM_BOT_TOKEN, EVM_PRIVATE_KEY, EVM_SERVER_ADDRESS
+- erc8004_registration.json — агент ID и TX hash
 - synthesis_registration.json — пустой (pendingId уже использован)
-- .env — TELEGRAM_BOT_TOKEN
 - openserv/.env — OPENSERV_API_KEY, OPENSERV_AUTH_TOKEN
 
 ## Running processes

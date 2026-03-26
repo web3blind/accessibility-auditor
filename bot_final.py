@@ -123,7 +123,8 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*Commands:*\n"
         "/start - Welcome message\n"
         "/help - This message\n"
-        "/status - Check bot status\n\n"
+        "/status - Check bot status\n"
+        "/arc - Arc Network info & agent identity\n\n"
         "*Questions?* Contact @web3blind",
         parse_mode="Markdown"
     )
@@ -135,6 +136,55 @@ async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ Bot is online and ready!\n\n"
         "Send a URL to start auditing."
     )
+
+
+async def arc_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /arc command - show Arc Network integration info"""
+    try:
+        from web3 import Web3
+        w3 = Web3(Web3.HTTPProvider("https://rpc.testnet.arc.network"))
+
+        wallet = "0x69a01903E635587C3e28DaAfF5DB82B369447e76"
+        balance = w3.eth.get_balance(wallet)
+        balance_usdc = float(Web3.from_wei(balance, "ether"))
+
+        # Load agent registration info
+        reg_path = os.path.join(os.path.dirname(__file__), "erc8004_registration.json")
+        agent_info = ""
+        if os.path.exists(reg_path):
+            with open(reg_path) as f:
+                reg = json.load(f)
+            agent_id = reg.get("agent_id", "N/A")
+            agent_info = (
+                f"\n🤖 *ERC-8004 Agent Identity*\n"
+                f"Agent ID: #{agent_id}\n"
+                f"Registry: IdentityRegistry\n"
+                f"Token: AGENT NFT\n"
+                f"Explorer: [View Agent](https://testnet.arcscan.app/token/0x8004A818BFB912233c491871b3d84c89A494BD9e/instance/{agent_id})\n"
+            )
+
+        await update.message.reply_text(
+            "🔵 *Arc Network Integration*\n\n"
+            f"*Network:* Arc Testnet (Circle L1)\n"
+            f"*Chain ID:* 5042002\n"
+            f"*Gas Token:* USDC (native)\n"
+            f"*Wallet:* `{wallet[:10]}...{wallet[-6:]}`\n"
+            f"*Balance:* {balance_usdc:.4f} USDC\n"
+            f"{agent_info}\n"
+            "💳 *x402 Payment*\n"
+            "Pay for audits with USDC on Arc Testnet!\n"
+            "Endpoint: POST /api/audit/paid\n"
+            "Price: $0.10 USDC\n\n"
+            "🔗 [Arc Explorer](https://testnet.arcscan.app)\n"
+            "🚰 [Get testnet USDC](https://faucet.circle.com/)",
+            parse_mode="Markdown",
+            disable_web_page_preview=True
+        )
+    except Exception as e:
+        await update.message.reply_text(
+            f"⚠️ Arc Network info unavailable: {str(e)[:100]}\n\n"
+            "Try again later."
+        )
 
 
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -721,6 +771,7 @@ def run_telegram_bot():
             application.add_handler(CommandHandler("start", start_handler))
             application.add_handler(CommandHandler("help", help_handler))
             application.add_handler(CommandHandler("status", status_handler))
+            application.add_handler(CommandHandler("arc", arc_handler))
             application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
             
             logger.info("Application initialized")
