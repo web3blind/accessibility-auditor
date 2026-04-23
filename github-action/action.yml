@@ -1,0 +1,42 @@
+name: 'Accessibility Auditor'
+description: 'Audit your project for WCAG accessibility issues with inline PR annotations'
+author: 'web3blind'
+inputs:
+  project-path:
+    description: 'Path to project to audit'
+    required: false
+    default: '.'
+  format:
+    description: 'Output format (json, sarif, pr-markdown, ci-summary, github-annotations)'
+    required: false
+    default: 'github-annotations'
+  fail-threshold:
+    description: 'Score threshold for failure (0-100)'
+    required: false
+    default: '60'
+  output-file:
+    description: 'Write output to file'
+    required: false
+  max-files:
+    description: 'Max files shown in pr-markdown'
+    required: false
+    default: '30'
+  max-findings:
+    description: 'Max findings per file in pr-markdown'
+    required: false
+    default: '8'
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  args:
+    - ${{ inputs.project-path }}
+    - ${{ inputs.format }}
+    - ${{ inputs.fail-threshold }}
+    - ${{ inputs.output-file }}
+    - ${{ inputs.max-files }}
+    - ${{ inputs.max-findings }}
+  env:
+    PYTHONUNBUFFERED: "1"
+branding:
+  icon: 'eye'
+  color: 'blue'

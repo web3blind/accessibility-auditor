@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hexdrive.tech/schemas/accessibility-audit-report.schema.json",
+  "title": "Accessibility Audit Report",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "schema_id",
+    "url",
+    "timestamp",
+    "platform",
+    "mode",
+    "score",
+    "grade",
+    "summary",
+    "findings",
+    "manual_checks",
+    "next_steps"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "schema_id": {"type": "string", "format": "uri"},
+    "url": {"type": "string"},
+    "timestamp": {"type": "string"},
+    "platform": {"type": "string"},
+    "mode": {"type": "string"},
+    "standards_checked": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "score": {"type": "integer", "minimum": 0, "maximum": 100},
+    "grade": {"type": "string"},
+    "total_issues": {"type": "integer", "minimum": 0},
+    "critical": {"type": "integer", "minimum": 0},
+    "warnings": {"type": "integer", "minimum": 0},
+    "info": {"type": "integer", "minimum": 0},
+    "summary": {
+      "type": "object",
+      "required": ["overall_assessment", "checked_automatically", "manual_follow_up_count"],
+      "properties": {
+        "overall_assessment": {"type": "string"},
+        "checked_automatically": {"type": "integer", "minimum": 0},
+        "manual_follow_up_count": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "findings": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/finding"}
+    },
+    "findings_by_severity": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {"$ref": "#/$defs/findingLegacy"}
+      }
+    },
+    "issues_by_category": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {"$ref": "#/$defs/findingLegacy"}
+      }
+    },
+    "top_findings": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/findingLegacy"}
+    },
+    "passed_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "description", "category"],
+        "properties": {
+          "title": {"type": "string"},
+          "description": {"type": "string"},
+          "category": {"type": "string"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "manual_checks": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "next_steps": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "mcp_payload": {
+      "type": "object",
+      "required": ["schema_version", "schema_id", "tool_name", "target", "summary", "findings"],
+      "properties": {
+        "schema_version": {"type": "string"},
+        "schema_id": {"type": "string", "format": "uri"},
+        "tool_name": {"type": "string"},
+        "target": {
+          "type": "object",
+          "required": ["type", "value"],
+          "properties": {
+            "type": {"type": "string"},
+            "value": {"type": "string"}
+          },
+          "additionalProperties": true
+        },
+        "summary": {
+          "type": "object",
+          "required": ["score", "grade", "total_findings", "critical", "warning", "info"],
+          "properties": {
+            "score": {"type": "integer"},
+            "grade": {"type": "string"},
+            "total_findings": {"type": "integer"},
+            "critical": {"type": "integer"},
+            "warning": {"type": "integer"},
+            "info": {"type": "integer"},
+            "overall_assessment": {"type": "string"}
+          },
+          "additionalProperties": true
+        },
+        "findings": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/finding"}
+        },
+        "manual_checks": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "next_steps": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": ["id", "rule_id", "category", "severity", "title", "message", "standards"],
+      "properties": {
+        "id": {"type": "string"},
+        "rule_id": {"type": "string"},
+        "category": {"type": "string"},
+        "severity": {"type": "string", "enum": ["critical", "warning", "info"]},
+        "title": {"type": "string"},
+        "message": {"type": "string"},
+        "description": {"type": ["string", "null"]},
+        "selector_hint": {"type": ["string", "null"]},
+        "recommendation": {"type": ["string", "null"]},
+        "standards": {
+          "type": "object",
+          "properties": {
+            "wcag": {"type": ["string", "null"]}
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "findingLegacy": {
+      "type": "object",
+      "properties": {
+        "category": {"type": "string"},
+        "severity": {"type": "string"},
+        "title": {"type": "string"},
+        "description": {"type": ["string", "null"]},
+        "element": {"type": ["string", "null"]},
+        "recommendation": {"type": ["string", "null"]},
+        "wcag": {"type": ["string", "null"]},
+        "check_id": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
