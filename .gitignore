@@ -52,6 +52,8 @@ bot_final.py.broken
 bot_final.py.backup_old
 bot_fixed.py
 bot.pid
+restart_bot.sh
+check_balance.py
 
 # OS
 .DS_Store
@@ -61,4 +63,6 @@ bot.pid
 openserv/node_modules/
 openserv/dist/
 openserv/.env
-EOF; __hermes_rc=$?; printf '__HERMES_FENCE_a9f7b3__'; exit $__hermes_rc
+
+# MCP virtual environment
+mcp_venv/

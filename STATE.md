@@ -16,8 +16,8 @@ Last updated: 2026-03-26
 - DNS: Cloudflare, A @ → 151.245.136.199 proxied
 
 ## Wallets (Base + Arc)
-- Client wallet: 0x830D957413EEbC8244C1346e1B86d8408F42F92f (has ETH on Base, ~10 USDC on Arc)
-- Server wallet: 0x69a01903E635587C3e28DaAfF5DB82B369447e76 (10 USDC on Arc)
+- Client wallet: $EVM_CLIENT_ADDRESS (has ETH on Base, ~10 USDC on Arc)
+- Server wallet: $EVM_SERVER_ADDRESS (10 USDC on Arc)
 - Keys: .env (EVM_PRIVATE_KEY) + wallets_x402.json (NOT in git)
 
 ## Arc Network Integration (Circle L1)
@@ -59,8 +59,8 @@ Last updated: 2026-03-26
 - Agent submitted for review ✅
 - SDK code: /root/.hermes/agents/accessibility-auditor/openserv/
 - Running via pm2: `openserv-agent` (auto-restart enabled)
-- API Key: 401ce02984e941d9b62616d1f5719dc8
-- Auth Token: 08cb61ce-ca94-4523-bd5a-ac51b5c23409
+- API Key: *** (see openserv/.env)
+- Auth Token: *** (see openserv/.env)
 - Capabilities: audit_website_free, get_payment_info, check_accessibility_score
 - Logs: /root/.pm2/logs/openserv-agent-out.log
 

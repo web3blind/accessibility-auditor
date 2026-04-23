@@ -46,7 +46,7 @@ except ImportError as _x402_err:
     logger_pre.warning(f"x402 not available: {_x402_err}")
 
 # Load config
-CONFIG_PATH = Path("/root/.hermes/agents/accessibility-auditor/config.json")
+CONFIG_PATH = Path("/root/accessibility-auditor-service/config.json")
 if CONFIG_PATH.exists():
     with open(CONFIG_PATH) as f:
         config = json.load(f)
@@ -66,7 +66,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
-        logging.FileHandler('/root/.hermes/agents/accessibility-auditor/bot.log'),
+        logging.FileHandler('/root/accessibility-auditor-service/bot.log'),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -89,6 +89,58 @@ def is_valid_url(url: str) -> bool:
         return all([result.scheme, result.netloc])
     except:
         return False
+
+
+def _build_short_telegram_report(audit_result: dict, audit_link: str, source_url: str) -> str:
+    """Compact bot summary. Full detail stays on the website report."""
+    score = audit_result.get("score", 0)
+    grade = audit_result.get("grade", "N/A")
+    total = audit_result.get("total_issues", 0)
+    critical = audit_result.get("critical", 0)
+    warnings = audit_result.get("warnings", 0)
+    info = audit_result.get("info", 0)
+    domain = urlparse(source_url).netloc or source_url
+    score_emoji = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
+
+    report = [
+        f"{score_emoji} *Accessibility Audit*",
+        "",
+        f"🌐 *Site:* {domain}",
+        f"⭐ *Score:* {score}/100 ({grade})",
+        f"📊 *Findings:* {total} total — 🔴 {critical} / 🟡 {warnings} / ℹ️ {info}",
+        "",
+    ]
+
+    summary = (audit_result.get("summary") or {}).get("overall_assessment")
+    if summary:
+        report.extend([summary, ""])
+
+    top_findings = audit_result.get("top_findings") or []
+    if top_findings:
+        report.append("*Top findings:*")
+        for issue in top_findings[:5]:
+            severity = issue.get("severity", "info")
+            emoji = "🔴" if severity == "critical" else "🟡" if severity == "warning" else "🔵"
+            title = issue.get("title", "Issue")
+            recommendation = issue.get("recommendation")
+            report.append(f"{emoji} {title}")
+            if recommendation:
+                report.append(f"   💡 {recommendation}")
+        report.append("")
+    elif total == 0:
+        report.extend(["✅ Автоматические проверки не нашли проблем.", ""])
+
+    report.extend([
+        "Полная подробная версия отчёта доступна на сайте:",
+        audit_link,
+        "",
+        "_В Telegram показывается краткая версия, чтобы отчёт не обрезался._",
+    ])
+
+    text = "\n".join(report)
+    if len(text) > 4000:
+        text = text[:3850] + f"\n\nПолный отчёт: {audit_link}"
+    return text
 
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -144,7 +196,9 @@ async def arc_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from web3 import Web3
         w3 = Web3(Web3.HTTPProvider("https://rpc.testnet.arc.network"))
 
-        wallet = "0x69a01903E635587C3e28DaAfF5DB82B369447e76"
+        wallet = os.getenv("EVM_SERVER_ADDRESS", os.getenv("X402_SERVER_ADDRESS", ""))
+        if not wallet:
+            return jsonify({"error": "EVM_SERVER_ADDRESS not configured"}), 500
         balance = w3.eth.get_balance(wallet)
         balance_usdc = float(Web3.from_wei(balance, "ether"))
 
@@ -220,60 +274,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         audit_id = storage.save_audit(audit_result)
         audit_link = f"https://hexdrive.tech/audits/{audit_id}"
         
-        # Build comprehensive report - ONE MESSAGE
-        score = audit_result.get("score", 0)
-        grade = audit_result.get("grade", "N/A")
-        total = audit_result.get("total_issues", 0)
-        critical = audit_result.get("critical", 0)
-        warnings = audit_result.get("warnings", 0)
-        info = audit_result.get("info", 0)
-        domain = urlparse(user_message).netloc or user_message
-        
-        score_emoji = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
-        
-        # Start report
-        report = f"{score_emoji} *Accessibility Audit Report*\n\n"
-        report += f"🌐 *Domain:* {domain}\n"
-        report += f"⭐️ *Score:* {score}/100 ({grade})\n\n"
-        report += f"🔗 *Watch on the web:*\n"
-        report += f"{audit_link}\n\n"
-        report += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        
-        # Issues by severity
-        report += f"📊 *Issues by Severity:*\n"
-        report += f"🔴 Critical: {critical}\n"
-        report += f"🟡 Warnings: {warnings}\n"
-        report += f"ℹ️ Info: {info}\n"
-        report += f"*Total Issues: {total}*\n\n"
-        
-        # Issues by category
-        issues_by_cat = audit_result.get("issues_by_category", {})
-        if issues_by_cat:
-            for category, issues in issues_by_cat.items():
-                report += f"*{category}* ({len(issues)} issues)\n"
-                report += f"────────────────────────────────────────\n\n"
-                
-                for issue in issues:
-                    severity = issue.get('severity', 'info')
-                    emoji = "🔴" if severity == 'critical' else "🟡" if severity == 'warning' else "🔵"
-                    title = issue.get('title', 'Unknown')
-                    description = issue.get('description', '')
-                    recommendation = issue.get('recommendation', '')
-                    
-                    report += f"{emoji} *{title}*\n"
-                    if description:
-                        report += f"   {description}\n"
-                    if recommendation:
-                        report += f"   💡 {recommendation}\n"
-                    report += "\n"
-        else:
-            report += "✅ *No issues found!* This website is very accessible.\n\n"
-        
-        # Truncate if too long (Telegram limit)
-        if len(report) > 4000:
-            report = report[:3900] + f"\n\n_See full report on web_"
-        
-        # Send ONE comprehensive report
+        # Send compact bot summary. Full details stay on the web report.
+        report = _build_short_telegram_report(audit_result, audit_link, user_message)
         await processing_msg.edit_text(report, parse_mode="Markdown")
         
     except Exception as e:
@@ -291,7 +293,7 @@ app = FastAPI(
 )
 
 # x402 setup - payment middleware for /api/audit/paid
-_X402_SERVER_ADDRESS = os.getenv("EVM_SERVER_ADDRESS", os.getenv("X402_SERVER_ADDRESS", "0x69a01903E635587C3e28DaAfF5DB82B369447e76"))
+_X402_SERVER_ADDRESS = os.getenv("EVM_SERVER_ADDRESS", os.getenv("X402_SERVER_ADDRESS", ""))
 _X402_PRICE = "$0.10"
 _X402_FACILITATOR = os.getenv("X402_FACILITATOR_URL", "https://x402.org/facilitator")
 
@@ -353,177 +355,10 @@ if X402_ENABLED:
 @app.get("/")
 async def root():
     """Homepage with form"""
-    return HTMLResponse(content="""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Accessibility Auditor</title>
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { 
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-                line-height: 1.6; 
-                color: #333; 
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                padding: 20px;
-            }
-            .container { 
-                max-width: 800px; 
-                margin: 0 auto; 
-                background: white; 
-                border-radius: 10px; 
-                padding: 40px;
-                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            }
-            h1 { 
-                text-align: center; 
-                margin-bottom: 10px;
-                color: #667eea;
-            }
-            .subtitle {
-                text-align: center;
-                color: #666;
-                margin-bottom: 30px;
-                font-size: 16px;
-            }
-            form {
-                margin: 30px 0;
-            }
-            label {
-                display: block;
-                margin-bottom: 8px;
-                font-weight: 500;
-            }
-            input[type="text"], input[type="url"] {
-                width: 100%;
-                padding: 12px;
-                border: 2px solid #e0e0e0;
-                border-radius: 5px;
-                font-size: 16px;
-                margin-bottom: 20px;
-            }
-            input:focus {
-                outline: none;
-                border-color: #667eea;
-                box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-            }
-            button {
-                width: 100%;
-                padding: 12px;
-                background: #667eea;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                font-size: 16px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: background 0.3s;
-            }
-            button:hover {
-                background: #764ba2;
-            }
-            .features {
-                margin-top: 50px;
-                padding-top: 30px;
-                border-top: 2px solid #f0f0f0;
-            }
-            .features h2 {
-                color: #667eea;
-                margin-bottom: 20px;
-            }
-            .feature-list {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 15px;
-            }
-            .feature {
-                padding: 15px;
-                background: #f5f5f5;
-                border-radius: 5px;
-            }
-            .feature strong {
-                color: #667eea;
-            }
-            @media (max-width: 600px) {
-                .feature-list {
-                    grid-template-columns: 1fr;
-                }
-                .container {
-                    padding: 20px;
-                }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>🔍 Accessibility Auditor</h1>
-            <p class="subtitle">Analyze any website for accessibility issues</p>
-            
-            <form onsubmit="submitAudit(event)">
-                <label for="url">Website URL:</label>
-                <input type="url" id="url" name="url" placeholder="https://example.com" required>
-                <button type="submit">🚀 Analyze</button>
-            </form>
-            
-            <div class="features">
-                <h2>Features</h2>
-                <div class="feature-list">
-                    <div class="feature">
-                        <strong>🎯 WCAG Compliance</strong><br>
-                        Checks against WCAG 2.1 guidelines
-                    </div>
-                    <div class="feature">
-                        <strong>♿ Semantic HTML</strong><br>
-                        Validates proper HTML structure
-                    </div>
-                    <div class="feature">
-                        <strong>🏷️ ARIA Labels</strong><br>
-                        Verifies ARIA attributes
-                    </div>
-                    <div class="feature">
-                        <strong>⌨️ Keyboard Navigation</strong><br>
-                        Tests keyboard accessibility
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <script>
-            async function submitAudit(event) {
-                event.preventDefault();
-                const url = document.getElementById('url').value;
-                const btn = event.target.querySelector('button');
-                btn.disabled = true;
-                btn.textContent = '⏳ Submitting...';
-
-                try {
-                    const response = await fetch('/api/audit', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url })
-                    });
-
-                    const data = await response.json();
-                    if (response.ok && data.audit_id) {
-                        window.location.href = '/audits/' + data.audit_id + '/pending';
-                    } else {
-                        alert('Error: ' + (data.error || 'Unknown error'));
-                        btn.disabled = false;
-                        btn.textContent = '🚀 Analyze';
-                    }
-                } catch (e) {
-                    alert('Error: ' + e.message);
-                    btn.disabled = false;
-                    btn.textContent = '🚀 Analyze';
-                }
-            }
-        </script>
-    </body>
-    </html>
-    """)
+    web_index = Path("/root/accessibility-auditor-service/web/index.html")
+    if web_index.exists():
+        return FileResponse(str(web_index), media_type="text/html")
+    return HTMLResponse("<h1>Accessibility Auditor</h1><p>Frontend not found.</p>")
 
 
 @app.get("/audits/{audit_id}/pending")
@@ -631,6 +466,7 @@ async def get_audit(audit_id: str):
 
 class AuditRequest(BaseModel):
     url: str
+    is_public: bool = False
 
 
 @app.post("/api/audit")
@@ -662,17 +498,45 @@ async def submit_audit(request: AuditRequest, raw_request: Request):
     async def run_audit_bg():
         try:
             result = await audit_website(url)
-            storage.save_audit_with_id(audit_id, result)
+            storage.save_audit_with_id(audit_id, result, is_public=request.is_public)
         except Exception as e:
             logger.error(f"Background audit error: {e}")
             storage.save_audit_with_id(audit_id, {
-                "url": url, "score": 0, "grade": "F (Fail)",
-                "total_issues": 1, "critical": 1, "warnings": 0, "info": 0,
+                "url": url,
+                "score": 0,
+                "grade": "F (Fail)",
+                "total_issues": 1,
+                "critical": 1,
+                "warnings": 0,
+                "info": 0,
                 "timestamp": __import__("datetime").datetime.now().isoformat(),
-                "issues_by_category": {"Network": [{"severity": "critical",
-                    "title": "Audit Failed", "description": str(e),
-                    "element": None, "recommendation": None}]}
-            })
+                "summary": {"overall_assessment": "Аудит завершился ошибкой до формирования полного отчёта."},
+                "findings_by_severity": {
+                    "critical": [{
+                        "category": "Network",
+                        "severity": "critical",
+                        "title": "Audit Failed",
+                        "description": str(e),
+                        "element": None,
+                        "recommendation": "Проверьте доступность сайта и повторите попытку.",
+                        "wcag": "N/A",
+                    }],
+                    "warning": [],
+                    "info": [],
+                },
+                "issues_by_category": {"Network": [{
+                    "category": "Network",
+                    "severity": "critical",
+                    "title": "Audit Failed",
+                    "description": str(e),
+                    "element": None,
+                    "recommendation": "Проверьте доступность сайта и повторите попытку.",
+                    "wcag": "N/A",
+                }]},
+                "passed_checks": [],
+                "manual_checks": [],
+                "next_steps": ["Повторить аудит после проверки сети/доступности URL."],
+            }, is_public=request.is_public)
 
     asyncio.create_task(run_audit_bg())
     return {"audit_id": audit_id}
@@ -697,8 +561,16 @@ async def audit_status(audit_id: str):
         "critical": result.get("critical"),
         "warnings": result.get("warnings"),
         "info": result.get("info"),
+        "summary": result.get("summary", {}),
+        "top_findings": result.get("top_findings", []),
         "issues_by_category": result.get("issues_by_category", {}),
     }
+
+
+@app.get("/api/audits")
+async def list_audits(limit: int = 10, public_only: bool = False):
+    """List recent audits for the website gallery."""
+    return storage.list_audits(limit=limit, public_only=public_only)
 
 
 @app.post("/api/audit/paid")
@@ -715,7 +587,7 @@ async def submit_paid_audit(request: AuditRequest):
     try:
         result = await audit_website(url)
         audit_id = storage.generate_id()
-        storage.save_audit_with_id(audit_id, result)
+        storage.save_audit_with_id(audit_id, result, is_public=request.is_public)
         return {
             "paid": True,
             "audit_id": audit_id,
@@ -759,6 +631,15 @@ async def x402_info():
             "ERC-8004 registered AI agent on Arc Network."
         ),
     }
+
+
+@app.get("/schemas/accessibility-audit-report.schema.json")
+async def get_accessibility_audit_schema():
+    """Expose the MCP-friendly JSON schema for future MCP/API consumers."""
+    schema_path = Path("/root/accessibility-auditor-service/schemas/accessibility-audit-report.schema.json")
+    if not schema_path.exists():
+        return JSONResponse({"error": "Schema not found"}, status_code=404)
+    return JSONResponse(content=json.loads(schema_path.read_text(encoding="utf-8")))
 
 
 class UvicornServer(uvicorn.Server):
