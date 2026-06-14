@@ -357,8 +357,79 @@ class ReportGenerator:
         
         <main id="main-content" class="content">
 """
+        summary = report.get('summary') or {}
+        if summary:
+            html += f"""
+            <section class="section">
+                <h2>Executive summary</h2>
+                <p>{html_module.escape(summary.get('overall_assessment') or '')}</p>
+            </section>
+"""
+
+        genlayer = report.get('genlayer_adjudication') or {}
+        if genlayer:
+            decision = genlayer.get('decision') or {}
+            verdict = html_module.escape(str(decision.get('verdict', 'unknown')))
+            rationale = html_module.escape(str(decision.get('rationale_en') or decision.get('rationale') or ''))
+            confidence = html_module.escape(str(decision.get('confidence', 'n/a')))
+            network = html_module.escape(str(genlayer.get('network', 'n/a')))
+            contract = html_module.escape(str(genlayer.get('contract_address', 'n/a')))
+            status = html_module.escape(str(genlayer.get('status', 'n/a')))
+            html += f"""
+            <section class="section">
+                <h2>GenLayer adjudication</h2>
+                <article class="issue info">
+                    <span class="issue-severity info">{status.upper()}</span>
+                    <h3 class="issue-title">Claim verdict: {verdict}</h3>
+                    <p class="issue-description"><strong>Confidence:</strong> {confidence}/100</p>
+                    <p class="issue-description"><strong>Rationale:</strong> {rationale}</p>
+                    <p class="issue-description"><strong>Network:</strong> {network}</p>
+                    <p class="issue-description"><strong>Contract:</strong> <code>{contract}</code></p>
+                </article>
+            </section>
+"""
+
+        passed_checks = report.get('passed_checks') or []
+        if passed_checks:
+            html += """
+            <section class="section">
+                <h2>Passed checks</h2>
+"""
+            for item in passed_checks:
+                html += f"                <p>✅ <strong>{html_module.escape(item.get('title', 'Passed'))}</strong>: {html_module.escape(item.get('description', ''))}</p>\n"
+            html += "            </section>\n"
+
+        manual_checks = report.get('manual_checks') or []
+        if manual_checks:
+            html += """
+            <section class="section">
+                <h2>What needs manual testing</h2>
+                <ul>
+"""
+            for item in manual_checks:
+                html += f"                    <li>{html_module.escape(str(item))}</li>\n"
+            html += "                </ul>\n            </section>\n"
+
+        next_steps = report.get('next_steps') or []
+        if next_steps:
+            html += """
+            <section class="section">
+                <h2>Next steps</h2>
+                <ul>
+"""
+            for item in next_steps:
+                html += f"                    <li>{html_module.escape(str(item))}</li>\n"
+            html += "                </ul>\n            </section>\n"
+
         
         # Issues section
+        if critical:
+            html += """
+            <section class="section">
+                <h2>Critical issues</h2>
+                <p>Critical findings are listed below in their categories.</p>
+            </section>
+"""
         if issues_by_category:
             for category, issues in issues_by_category.items():
                 html += f"""

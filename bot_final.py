@@ -25,6 +25,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 from telegram.constants import ChatAction
 from urllib.parse import urlparse
 from auditor import audit_website
+from genlayer_adjudication import adjudicate_report, DEFAULT_CONTRACT_ADDRESS, DEFAULT_NETWORK
 from storage import AuditStorage
 from report_generator import ReportGenerator
 from fastapi import FastAPI, Request
@@ -116,6 +117,18 @@ def _build_short_telegram_report(audit_result: dict, audit_link: str, source_url
         report.extend([summary, ""])
 
     top_findings = audit_result.get("top_findings") or []
+    genlayer = audit_result.get("genlayer_adjudication") or {}
+    decision = genlayer.get("decision") or {}
+    if decision.get("verdict"):
+        report.extend([
+            "*GenLayer adjudication:*",
+            f"⚖️ Verdict: `{decision.get('verdict')}` — confidence {decision.get('confidence', 'n/a')}/100",
+        ])
+        rationale = decision.get("rationale_en") or decision.get("rationale")
+        if rationale:
+            report.append(str(rationale)[:500])
+        report.append("")
+
     if top_findings:
         report.append("*Top findings:*")
         for issue in top_findings[:5]:
@@ -270,9 +283,15 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         
-        # Save result
-        audit_id = storage.save_audit(audit_result)
+        # Save result with GenLayer adjudication block
+        audit_id = storage.generate_id()
         audit_link = f"https://hexdrive.tech/audits/{audit_id}"
+        audit_result["genlayer_adjudication"] = await adjudicate_report(
+            audit_result,
+            audit_id=audit_id,
+            report_url=audit_link,
+        )
+        storage.save_audit_with_id(audit_id, audit_result)
         
         # Send compact bot summary. Full details stay on the web report.
         report = _build_short_telegram_report(audit_result, audit_link, user_message)
@@ -498,6 +517,12 @@ async def submit_audit(request: AuditRequest, raw_request: Request):
     async def run_audit_bg():
         try:
             result = await audit_website(url)
+            report_url = f"https://hexdrive.tech/audits/{audit_id}"
+            result["genlayer_adjudication"] = await adjudicate_report(
+                result,
+                audit_id=audit_id,
+                report_url=report_url,
+            )
             storage.save_audit_with_id(audit_id, result, is_public=request.is_public)
         except Exception as e:
             logger.error(f"Background audit error: {e}")
@@ -564,6 +589,7 @@ async def audit_status(audit_id: str):
         "summary": result.get("summary", {}),
         "top_findings": result.get("top_findings", []),
         "issues_by_category": result.get("issues_by_category", {}),
+        "genlayer_adjudication": result.get("genlayer_adjudication"),
     }
 
 
@@ -587,11 +613,17 @@ async def submit_paid_audit(request: AuditRequest):
     try:
         result = await audit_website(url)
         audit_id = storage.generate_id()
+        report_url = f"https://hexdrive.tech/audits/{audit_id}"
+        result["genlayer_adjudication"] = await adjudicate_report(
+            result,
+            audit_id=audit_id,
+            report_url=report_url,
+        )
         storage.save_audit_with_id(audit_id, result, is_public=request.is_public)
         return {
             "paid": True,
             "audit_id": audit_id,
-            "report_url": f"https://hexdrive.tech/audits/{audit_id}",
+            "report_url": report_url,
             "payment_network": _X402_NETWORK if X402_ENABLED else "disabled",
             **result
         }
@@ -630,6 +662,19 @@ async def x402_info():
             "Accepts USDC on Base Sepolia (ERC-20) or Arc Testnet (native USDC gas token). "
             "ERC-8004 registered AI agent on Arc Network."
         ),
+    }
+
+
+@app.get("/api/genlayer/info")
+async def genlayer_info():
+    """Discovery endpoint for GenLayer Accessibility Court integration."""
+    return {
+        "enabled": os.getenv("GENLAYER_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
+        "network": os.getenv("GENLAYER_NETWORK", DEFAULT_NETWORK),
+        "contract_address": os.getenv("GENLAYER_ACCESSIBILITY_CONTRACT", DEFAULT_CONTRACT_ADDRESS),
+        "claim": "The audited web page is accessible for blind users and can be used with keyboard navigation and screen readers without critical blockers.",
+        "description": "GenLayer acts as an independent adjudication layer over Accessibility Auditor evidence. It does not replace the audit; it judges whether the collected evidence supports a concrete accessibility claim.",
+        "submission_note": "Studionet is suitable for prototype proof. For GenLayer Portal / public community review, redeploy the same contract to Testnet Bradbury when GEN faucet tokens are available.",
     }
 
 

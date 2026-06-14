@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from typing import List, Dict, Tuple, Optional
 import json
 from datetime import datetime
+import os
+import sys
 import subprocess
 import tempfile
 
@@ -429,38 +431,14 @@ class AccessibilityAuditor:
     
     def generate_report(self) -> Dict:
         """Generate audit report"""
-        # Group issues by category
-        issues_by_category = {}
-        for issue in self.issues:
-            if issue.category not in issues_by_category:
-                issues_by_category[issue.category] = []
-            issues_by_category[issue.category].append(issue)
-        
-        # Convert to dict format
-        issues_data = {}
-        for category, issues in issues_by_category.items():
-            issues_data[category] = [
-                {
-                    'severity': issue.severity,
-                    'title': issue.title,
-                    'description': issue.description,
-                    'element': issue.element,
-                    'recommendation': issue.recommendation
-                }
-                for issue in issues
-            ]
-        
-        return {
-            'url': self.url,
-            'timestamp': self.timestamp,
-            'score': self.score,
-            'total_issues': len(self.issues),
-            'critical': len([i for i in self.issues if i.severity == 'critical']),
-            'warnings': len([i for i in self.issues if i.severity == 'warning']),
-            'info': len([i for i in self.issues if i.severity == 'info']),
-            'issues_by_category': issues_data,
-            'grade': self._get_grade(self.score)
-        }
+        findings = _issues_to_findings(self.issues)
+        return _build_report(
+            url=self.url,
+            timestamp=self.timestamp,
+            score=self.score,
+            grade=self._get_grade(self.score),
+            findings=findings,
+        )
     
     @staticmethod
     def _get_grade(score: int) -> str:
@@ -475,6 +453,161 @@ class AccessibilityAuditor:
             return 'D (Poor)'
         else:
             return 'F (Fail)'
+
+
+def _issue_to_dict(issue: AuditIssue) -> Dict:
+    return {
+        'category': issue.category,
+        'severity': issue.severity,
+        'title': issue.title,
+        'description': issue.description,
+        'element': issue.element,
+        'recommendation': issue.recommendation,
+        'wcag': _wcag_for_category(issue.category),
+    }
+
+
+def _wcag_for_category(category: str) -> str:
+    mapping = {
+        'Images': '1.1.1 Non-text Content',
+        'Links': '2.4.4 Link Purpose',
+        'Headings': '1.3.1 Info and Relationships',
+        'Forms': '3.3.2 Labels or Instructions',
+        'Keyboard': '2.1.1 Keyboard',
+        'ARIA': '4.1.2 Name, Role, Value',
+        'Semantic HTML': '1.3.1 Info and Relationships',
+        'Language': '3.1.1 Language of Page',
+        'Responsive Design': '1.4.10 Reflow',
+        'Contrast': '1.4.3 Contrast (Minimum)',
+    }
+    return mapping.get(category, 'WCAG 2.1 AA review')
+
+
+def _issues_to_findings(issues: List[AuditIssue]) -> List[Dict]:
+    findings = []
+    for idx, issue in enumerate(issues, start=1):
+        item = _issue_to_dict(issue)
+        item.update({
+            'id': f'a11y-{idx:03d}',
+            'rule_id': re.sub(r'[^a-z0-9]+', '-', f"{issue.category}-{issue.title}".lower()).strip('-')[:80],
+            'message': issue.description,
+            'selector_hint': issue.element,
+            'standards': {'wcag': [_wcag_for_category(issue.category)]},
+        })
+        findings.append(item)
+    return findings
+
+
+def _build_report(url: str, timestamp: str, score: int, grade: str, findings: List[Dict]) -> Dict:
+    issues_by_category: Dict[str, List[Dict]] = {}
+    findings_by_severity = {'critical': [], 'warning': [], 'info': []}
+    for item in findings:
+        category = item.get('category', 'General')
+        severity = item.get('severity', 'info')
+        legacy_item = {
+            'category': category,
+            'severity': severity,
+            'title': item.get('title'),
+            'description': item.get('description') or item.get('message'),
+            'element': item.get('element') or item.get('selector_hint'),
+            'recommendation': item.get('recommendation'),
+            'wcag': item.get('wcag') or ', '.join(item.get('standards', {}).get('wcag', [])),
+        }
+        issues_by_category.setdefault(category, []).append(legacy_item)
+        findings_by_severity.setdefault(severity, []).append(legacy_item)
+
+    critical = len(findings_by_severity.get('critical', []))
+    warnings = len(findings_by_severity.get('warning', []))
+    info = len(findings_by_severity.get('info', []))
+    manual_checks = [
+        'Verify keyboard-only navigation, visible focus order, and absence of keyboard traps.',
+        'Verify the main user flow with NVDA, JAWS, VoiceOver, or TalkBack.',
+        'Check dynamic content, modals, error messages, and form validation with assistive technology.',
+        'Validate color contrast and zoom/reflow in the final rendered UI.',
+    ]
+    passed_checks = []
+    if score >= 80:
+        passed_checks.append({'title': 'No dominant automated blocker', 'description': 'The automated score is high enough for further manual verification.', 'category': 'Summary'})
+
+    top_findings = sorted(findings, key=lambda x: {'critical': 0, 'warning': 1, 'info': 2}.get(str(x.get('severity') or 'info'), 3))[:5]
+    if critical > 0:
+        assessment = 'Critical accessibility blockers were found. The page is not ready to claim accessibility compliance.'
+    elif warnings > 0:
+        assessment = 'No critical automated blocker dominates the report, but warnings require fixes and manual assistive-technology testing.'
+    else:
+        assessment = 'Automated checks did not find accessibility issues, but manual screen-reader and keyboard verification is still required.'
+
+    report = {
+        'schema_version': '1.0.0',
+        'schema_id': 'https://hexdrive.tech/schemas/accessibility-audit-report.schema.json',
+        'url': url,
+        'timestamp': timestamp,
+        'platform': 'web',
+        'mode': 'full',
+        'standards_checked': ['WCAG 2.1 AA', 'GOST R 52872-2019'],
+        'score': score,
+        'grade': grade,
+        'total_issues': len(findings),
+        'critical': critical,
+        'warnings': warnings,
+        'info': info,
+        'issues_by_category': issues_by_category,
+        'findings_by_severity': findings_by_severity,
+        'findings': findings,
+        'top_findings': top_findings,
+        'passed_checks': passed_checks,
+        'manual_checks': manual_checks,
+        'next_steps': [
+            'Fix critical findings first, then warnings.',
+            'Run a repeat audit after fixes.',
+            'Complete manual keyboard and screen-reader verification before claiming full accessibility.',
+        ],
+        'summary': {
+            'overall_assessment': assessment,
+            'checked_automatically': max(1, len(findings)),
+            'manual_follow_up_count': len(manual_checks),
+        },
+    }
+    report['mcp_payload'] = {
+        'schema_version': report['schema_version'],
+        'url': report['url'],
+        'score': report['score'],
+        'grade': report['grade'],
+        'findings': report['findings'],
+        'summary': report['summary'],
+    }
+    return report
+
+
+def audit_html_content(html_content: str, source_name: str = 'inline-html') -> Dict:
+    auditor = AccessibilityAuditor(source_name)
+    auditor.html = html_content
+    auditor.soup = BeautifulSoup(html_content, 'html.parser')
+    auditor._check_semantic_html()
+    auditor._check_images()
+    auditor._check_links()
+    auditor._check_headings()
+    auditor._check_forms()
+    auditor._check_contrast()
+    auditor._check_keyboard_nav()
+    auditor._check_aria()
+    auditor._check_text_alternatives()
+    auditor._check_page_structure()
+    auditor._check_language()
+    auditor._check_responsive_design()
+    auditor._calculate_score()
+    return auditor.generate_report()
+
+
+def audit_html_file(path: str) -> Dict:
+    with open(path, 'r', encoding='utf-8', errors='replace') as f:
+        return audit_html_content(f.read(), source_name=path)
+
+
+def load_report_schema() -> Dict:
+    schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schemas', 'accessibility-audit-report.schema.json')
+    with open(schema_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
 
 async def audit_website(url: str) -> Dict:
