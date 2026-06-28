@@ -700,7 +700,7 @@ async def genlayer_info():
         "contract_address": os.getenv("GENLAYER_ACCESSIBILITY_CONTRACT", DEFAULT_CONTRACT_ADDRESS),
         "claim": "The audited web page is accessible for blind users and can be used with keyboard navigation and screen readers without critical blockers.",
         "description": "GenLayer acts as an independent adjudication layer over Accessibility Auditor evidence. It does not replace the audit; it judges whether the collected evidence supports a concrete accessibility claim.",
-        "submission_note": "Studionet is suitable for prototype proof. For GenLayer Portal / public community review, redeploy the same contract to Testnet Bradbury when GEN faucet tokens are available.",
+        "submission_note": "Live prototype on GenLayer Testnet Bradbury. The auditor collects evidence first; GenLayer then independently adjudicates whether that evidence supports the accessibility claim.",
     }
 
 

@@ -374,7 +374,21 @@ class ReportGenerator:
             confidence = html_module.escape(str(decision.get('confidence', 'n/a')))
             network = html_module.escape(str(genlayer.get('network', 'n/a')))
             contract = html_module.escape(str(genlayer.get('contract_address', 'n/a')))
+            contract_url = html_module.escape(str(genlayer.get('contract_url') or ''))
+            transaction_hash = html_module.escape(str(genlayer.get('transaction_hash') or ''))
+            transaction_url = html_module.escape(str(genlayer.get('transaction_url') or ''))
+            rollup_hash = html_module.escape(str(genlayer.get('rollup_transaction_hash') or ''))
+            rollup_url = html_module.escape(str(genlayer.get('rollup_transaction_url') or ''))
             status = html_module.escape(str(genlayer.get('status', 'n/a')))
+            contract_html = (
+                f'<a href="{contract_url}" target="_blank" rel="noopener noreferrer"><code>{contract}</code></a>'
+                if contract_url else f'<code>{contract}</code>'
+            )
+            tx_html = ""
+            if transaction_hash and transaction_url:
+                tx_html += f'<p class="issue-description"><strong>GenLayer transaction:</strong> <a href="{transaction_url}" target="_blank" rel="noopener noreferrer"><code>{transaction_hash}</code></a></p>'
+            if rollup_hash and rollup_url:
+                tx_html += f'<p class="issue-description"><strong>Rollup transaction:</strong> <a href="{rollup_url}" target="_blank" rel="noopener noreferrer"><code>{rollup_hash}</code></a></p>'
             html += f"""
             <section class="section">
                 <h2>GenLayer adjudication</h2>
@@ -384,7 +398,8 @@ class ReportGenerator:
                     <p class="issue-description"><strong>Confidence:</strong> {confidence}/100</p>
                     <p class="issue-description"><strong>Rationale:</strong> {rationale}</p>
                     <p class="issue-description"><strong>Network:</strong> {network}</p>
-                    <p class="issue-description"><strong>Contract:</strong> <code>{contract}</code></p>
+                    <p class="issue-description"><strong>Contract:</strong> {contract_html}</p>
+                    {tx_html}
                 </article>
             </section>
 """

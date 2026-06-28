@@ -90,6 +90,13 @@ sleep 1
     fi
     
     cd "$BOT_DIR" || exit 1
+
+    # Load runtime environment (.env contains non-committed secrets and feature flags).
+    if [[ -f "$BOT_DIR/.env" ]]; then
+        set -a
+        source "$BOT_DIR/.env"
+        set +a
+    fi
     
     # Start bot with nohup and capture its PID
     nohup python3 -u bot_final.py >> "$BOT_LOG" 2>&1 &

@@ -200,3 +200,10 @@ Improve the existing accessibility auditor so that:
 - Platform-aware local project audits work for major app stacks.
 - Batch MCP tools support multi-project workflows.
 - Tests pass for the modified core behavior.
+
+## Production deployment phase — 2026-06-14
+- Scope: deploy only the GenLayer adjudication integration to `hexdrive.tech` / `/root/accessibility-auditor-service` and mirrored aaPanel site root `/www/wwwroot/hexdrive.tech`.
+- Non-goals: do not touch other sites, global Nginx, unrelated credentials, stored audit artifacts, or x402/wallet scripts.
+- Safety: read-only inventory first, create timestamped target backup, update only changed Python/source files and `.gitignore`, preserve `.env` and `config.json` secrets.
+- GenLayer constraint: Bradbury deploy requires GEN funding; if faucet is unavailable, keep production in `GENLAYER_ENABLED=false` local-preview mode and expose `/api/genlayer/info` honestly.
+- Validation: local full pytest, remote Python compile, restart only the target bot/API process, verify local `/api/genlayer/info` and public `https://hexdrive.tech/api/genlayer/info`.

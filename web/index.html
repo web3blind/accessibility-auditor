@@ -299,6 +299,32 @@
         .description-full li {
             margin-bottom: 8px;
         }
+
+        .provenance-card {
+            background: #f8f9ff;
+            border-left: 4px solid #667eea;
+            border-radius: 8px;
+            padding: 18px;
+            margin: 20px 0;
+        }
+
+        .provenance-card h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .provenance-card p,
+        .provenance-card li {
+            color: #555;
+        }
+
+        .provenance-card code {
+            background: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            word-break: break-all;
+        }
         
         .recent-audits {
             margin-top: 30px;
@@ -525,6 +551,20 @@
                     without alt text, proper headings, and ARIA attributes, they're as lost as a blind user 
                     on a page full of unlabeled images. Good markup benefits humans and machines equally.
                 </p>
+
+                <div class="provenance-card" aria-labelledby="genlayer-provenance-title">
+                    <h3 id="genlayer-provenance-title">GenLayer provenance</h3>
+                    <p>
+                        Audit evidence is adjudicated on GenLayer Testnet Bradbury. The accessibility audit runs first;
+                        GenLayer then independently judges whether the collected evidence supports the accessibility claim.
+                    </p>
+                    <ul>
+                        <li><strong>Contract:</strong> <a href="https://explorer-bradbury.genlayer.com/address/0x188C501e7bc1678C1bB7af2cf19A702194b9FB33" target="_blank" rel="noopener noreferrer"><code>0x188C501e7bc1678C1bB7af2cf19A702194b9FB33</code></a></li>
+                        <li><strong>Deployment transaction:</strong> <a href="https://explorer-bradbury.genlayer.com/tx/0x7fd6aef3544803711468367e4c6f93a0cdf1ea06073424c4dbc3aafed5f5e10f" target="_blank" rel="noopener noreferrer"><code>0x7fd6...e10f</code></a></li>
+                        <li><strong>Latest adjudication transaction:</strong> <a href="https://explorer-bradbury.genlayer.com/tx/0xb4854236551470527a0d2ee3f37c2f55cbb2141f29767ce174abac5f6f6c142d" target="_blank" rel="noopener noreferrer"><code>0xb485...142d</code></a></li>
+                        <li><strong>Rollup transaction:</strong> <a href="https://zksync-os-testnet-genlayer.explorer.zksync.dev/tx/0xca8630af322fced6aa1e6e535ba3cf785c43621db893ef5b9e8c952792d4c591" target="_blank" rel="noopener noreferrer"><code>0xca86...c591</code></a></li>
+                    </ul>
+                </div>
             </div>
             
             <!-- Public audits list -->

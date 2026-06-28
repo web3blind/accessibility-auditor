@@ -14,11 +14,15 @@ import json
 import os
 import re
 import shutil
+import urllib.parse
+import urllib.request
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-DEFAULT_CONTRACT_ADDRESS = "0x050fa298a14852FdfB1Bbd8Cd789c0c72d270cdb"
-DEFAULT_NETWORK = "studionet"
+DEFAULT_CONTRACT_ADDRESS = "0x188C501e7bc1678C1bB7af2cf19A702194b9FB33"
+DEFAULT_NETWORK = "testnet-bradbury"
+DEFAULT_CLI_WORKDIR = "/home/assistent/ai-projects/retro-drops-generator/genlayer-accessibility-court"
+DEFAULT_EXPLORER_BASE_URL = "https://explorer-bradbury.genlayer.com"
 DEFAULT_CLAIM = (
     "The audited web page is accessible for blind users and can be used "
     "with keyboard navigation and screen readers without critical blockers."
@@ -143,6 +147,88 @@ def _validate_decision(data: Dict[str, Any]) -> Dict[str, Any]:
     return data
 
 
+def _resolve_npx() -> Optional[str]:
+    """Resolve npx in cron/aaPanel environments where PATH may be minimal."""
+    npx = shutil.which("npx")
+    if npx:
+        return npx
+    for candidate in (
+        "/www/server/nodejs/v22.22.1/bin/npx",
+        "/www/server/nodejs/v20.11.1/bin/npx",
+        "/usr/local/bin/npx",
+        "/usr/bin/npx",
+    ):
+        if os.path.exists(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _load_genlayer_password(cli_workdir: str) -> Optional[str]:
+    """Load the GenLayer keystore password without logging or exposing it."""
+    password = os.getenv("GENLAYER_KEYSTORE_PASSWORD") or os.getenv("GENLAYER_DEMO_KEYSTORE_PASSWORD")
+    if password:
+        return password
+
+    env_path = os.path.join(cli_workdir, ".env")
+    try:
+        with open(env_path, "r", encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                if key.strip() == "GENLAYER_DEMO_KEYSTORE_PASSWORD":
+                    return value.strip().strip('"').strip("'")
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return None
+    return None
+
+
+def _explorer_url(path: str, value: str) -> str:
+    base = os.getenv("GENLAYER_EXPLORER_BASE_URL", DEFAULT_EXPLORER_BASE_URL).rstrip("/")
+    return f"{base}/{path}/{value}"
+
+
+def _fetch_latest_contract_transaction(contract_address: str) -> Optional[Dict[str, Any]]:
+    """Best-effort explorer lookup for the newest transaction touching the contract."""
+    if not contract_address or contract_address == "n/a":
+        return None
+
+    base = os.getenv("GENLAYER_EXPLORER_BASE_URL", DEFAULT_EXPLORER_BASE_URL).rstrip("/")
+    query = urllib.parse.urlencode({"address": contract_address, "page": 1, "page_size": 1})
+    request = urllib.request.Request(
+        f"{base}/api/v1/transactions?{query}",
+        headers={"User-Agent": "hexdrive-accessibility-auditor/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+
+    transactions = data.get("transactions") or []
+    if not transactions:
+        return None
+    tx = transactions[0]
+    tx_hash = tx.get("hash")
+    rollup_hash = tx.get("rollup_transaction_hash")
+    return {
+        "transaction_hash": tx_hash,
+        "transaction_url": _explorer_url("tx", tx_hash) if tx_hash else None,
+        "rollup_transaction_hash": rollup_hash,
+        "rollup_transaction_url": (
+            "https://zksync-os-testnet-genlayer.explorer.zksync.dev/tx/" + rollup_hash
+            if rollup_hash else None
+        ),
+        "contract_url": _explorer_url("address", contract_address),
+        "explorer_status": tx.get("status"),
+        "submission_timestamp": tx.get("submission_timestamp"),
+        "finalization_timestamp": tx.get("finalization_timestamp"),
+    }
+
+
 async def adjudicate_report(
     report: Dict[str, Any],
     *,
@@ -155,6 +241,7 @@ async def adjudicate_report(
     case_id = audit_id or f"audit-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
     network = os.getenv("GENLAYER_NETWORK", DEFAULT_NETWORK)
     contract_address = os.getenv("GENLAYER_ACCESSIBILITY_CONTRACT", DEFAULT_CONTRACT_ADDRESS)
+    cli_workdir = os.getenv("GENLAYER_CLI_WORKDIR", DEFAULT_CLI_WORKDIR)
     enabled = os.getenv("GENLAYER_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
 
     base = {
@@ -162,6 +249,7 @@ async def adjudicate_report(
         "claim": claim,
         "network": network,
         "contract_address": contract_address,
+        "contract_url": _explorer_url("address", contract_address) if contract_address else None,
         "evidence": evidence,
     }
 
@@ -173,7 +261,8 @@ async def adjudicate_report(
             "decision": _local_decision(evidence),
         }
 
-    if not shutil.which("npx"):
+    npx_path = _resolve_npx()
+    if not npx_path:
         return {
             **base,
             "status": "error",
@@ -182,35 +271,48 @@ async def adjudicate_report(
         }
 
     evidence_json = json.dumps(evidence, ensure_ascii=False, separators=(",", ":"))
+    subprocess_env = os.environ.copy()
+    npx_dir = os.path.dirname(npx_path)
+    subprocess_env["PATH"] = npx_dir + os.pathsep + subprocess_env.get("PATH", "")
     try:
         # The service deliberately uses the CLI as an integration boundary so we do
         # not add a fragile Python SDK dependency to the production bot process.
         set_network = await asyncio.create_subprocess_exec(
-            "npx", "genlayer", "network", "set", network,
+            npx_path, "genlayer", "network", "set", network,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=cli_workdir,
+            env=subprocess_env,
         )
         await asyncio.wait_for(set_network.communicate(), timeout=60)
 
+        password = _load_genlayer_password(cli_workdir)
+        stdin = asyncio.subprocess.PIPE if password else None
         write_proc = await asyncio.create_subprocess_exec(
-            "npx", "genlayer", "write",
+            npx_path, "genlayer", "write",
             contract_address,
             "adjudicate_claim",
             "--args", case_id, evidence_json, claim,
+            stdin=stdin,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=cli_workdir,
+            env=subprocess_env,
         )
-        write_out, write_err = await asyncio.wait_for(write_proc.communicate(), timeout=240)
+        write_input = f"{password}\n".encode("utf-8") if password else None
+        write_out, write_err = await asyncio.wait_for(write_proc.communicate(write_input), timeout=240)
         write_text = (write_out + write_err).decode("utf-8", errors="replace")
         if write_proc.returncode != 0:
             raise RuntimeError(write_text[-2000:])
 
         call_proc = await asyncio.create_subprocess_exec(
-            "npx", "genlayer", "call",
+            npx_path, "genlayer", "call",
             contract_address,
             "get_last_decision_json",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=cli_workdir,
+            env=subprocess_env,
         )
         call_out, call_err = await asyncio.wait_for(call_proc.communicate(), timeout=120)
         call_text = (call_out + call_err).decode("utf-8", errors="replace")
@@ -219,11 +321,13 @@ async def adjudicate_report(
         parsed = _extract_json(call_text)
         if parsed is None:
             raise RuntimeError(f"Could not parse GenLayer decision JSON: {call_text[-1000:]}")
+        tx_info = await asyncio.to_thread(_fetch_latest_contract_transaction, contract_address)
         return {
             **base,
             "status": "accepted",
             "write_output": write_text[-2000:],
             "decision": _validate_decision(parsed),
+            **(tx_info or {}),
         }
     except Exception as exc:
         return {
