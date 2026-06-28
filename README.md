@@ -6,6 +6,12 @@ Built by a blind developer for blind and low-vision users.
 
 🤖 **[Telegram Bot: @accessibilityAuditAgentBot](https://t.me/accessibilityAuditAgentBot)** | 🌐 **[Web: hexdrive.tech](https://hexdrive.tech)**
 
+## GenLayer provenance prototype
+
+This repository is the main Accessibility Auditor service. The GenLayer adjudication prototype lives here: https://github.com/web3blind/genlayer-accessibility-court
+
+The prototype adds an independent GenLayer judgement / provenance layer on top of selected accessibility audit evidence.
+
 ## What It Does
 
 Audits any website for WCAG 2.1 accessibility compliance. Returns a score (0–100), letter grade (A–F), and detailed issue breakdown across 12 categories:
