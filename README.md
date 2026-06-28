@@ -25,7 +25,7 @@ Audits any website for WCAG 2.1 accessibility compliance. Returns a score (0–1
 
 ## x402 Payment Integration
 
-AI agents and developers can pay per audit via the [x402 protocol](https://x402.org) — no API keys, no subscriptions.
+AI agents and developers can pay per audit via the [x402 protocol](https://x402.org) — no API keys required.
 
 ```
 POST https://hexdrive.tech/api/audit/paid
@@ -38,6 +38,12 @@ Discovery endpoint:
 ```
 GET https://hexdrive.tech/api/x402/info
 ```
+
+The discovery response also describes the auditor as an ERC-8004 registered
+agent on Arc Testnet and exposes a simple pay-per-audit model for other agents.
+Client agents should treat the published price as a spending-policy input: check
+their maximum price per audit, remaining daily budget, and allowed target domains
+before submitting payment.
 
 Free audits are available via the web interface only (not via API).
 
@@ -53,7 +59,12 @@ agent_kit = AgentKit(AgentKitConfig(
     wallet_provider=wallet_provider,
     action_providers=[accessibility_audit_action_provider()]
 ))
-# Agent can now call: accessibility_paid_audit(url="https://example.com")
+# Agent can now call:
+# accessibility_paid_audit(
+#     url="https://example.com",
+#     max_price_usd=0.10,
+#     remaining_daily_budget_usd=1.00,
+# )
 ```
 
 ### Python client example
@@ -100,6 +111,10 @@ Results appear at `https://hexdrive.tech/audits/<audit_id>`.
 3. On payment confirmation: headless Chromium (Playwright) fetches the full page.
 4. BeautifulSoup runs 12 accessibility checks.
 5. Score + HTML report generated, returned immediately for paid requests.
+
+For agentic workflows, the intended control pattern is deliberately simple:
+ERC-8004 identity for discoverability, x402 settlement for one audit, and
+client-side spending limits before payment.
 
 ## Tech Stack
 

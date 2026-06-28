@@ -491,7 +491,7 @@ class AuditRequest(BaseModel):
 @app.post("/api/audit")
 async def submit_audit(request: AuditRequest, raw_request: Request):
     """Free audit — only accessible from the website UI (not for external agents/API clients).
-    For programmatic access use POST /api/audit/paid (x402, 0.10 USDC on Base Mainnet).
+    For programmatic access use POST /api/audit/paid (x402, 0.10 USDC on Base Sepolia).
     """
     # Only allow requests originating from hexdrive.tech itself
     referer = raw_request.headers.get("referer", "")
@@ -602,7 +602,7 @@ async def list_audits(limit: int = 10, public_only: bool = False):
 @app.post("/api/audit/paid")
 async def submit_paid_audit(request: AuditRequest):
     """
-    Paid accessibility audit via x402 (0.10 USDC on Base Mainnet).
+    Paid accessibility audit via x402 (0.10 USDC on Base Sepolia).
     x402 middleware intercepts this route — client must pay before getting response.
     On successful payment, runs full audit and returns JSON report.
     """
@@ -650,17 +650,43 @@ async def x402_info():
     return {
         "enabled": True,
         "paid_endpoint": "POST /api/audit/paid",
+        "service_url": "https://hexdrive.tech",
+        "pricing_model": "pay_per_audit",
         "price": _X402_PRICE,
         "pay_to": _X402_SERVER_ADDRESS,
         "facilitator": _X402_FACILITATOR,
         "active_network": _X402_ACTIVE,
         "networks": networks_info,
-        "erc8004_agent_id": 963,
-        "erc8004_registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+        "agent_identity": {
+            "standard": "ERC-8004",
+            "network": "arc_testnet",
+            "chain_id": 5042002,
+            "agent_id": 963,
+            "identity_registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+            "explorer_url": "https://testnet.arcscan.app/token/0x8004A818BFB912233c491871b3d84c89A494BD9e/instance/963",
+        },
+        "capabilities": [
+            "website_accessibility_audit",
+            "wcag_2_1_review",
+            "screen_reader_risk_review",
+            "keyboard_navigation_risk_review",
+            "structured_json_report",
+            "html_report",
+            "x402_paid_api",
+        ],
+        "agentic_payment_pattern": {
+            "identity": "ERC-8004 registered accessibility audit agent on Arc Testnet",
+            "settlement": "x402 pay-per-audit endpoint with USDC payment flow",
+            "recommended_client_controls": [
+                "max_price_per_audit_usd",
+                "remaining_daily_budget_usd",
+                "allowed_audit_domains",
+                "human_approval_above_limit_usd",
+            ],
+        },
         "description": (
             "Accessibility Auditor — WCAG 2.1 compliance check with x402 payments. "
-            "Accepts USDC on Base Sepolia (ERC-20) or Arc Testnet (native USDC gas token). "
-            "ERC-8004 registered AI agent on Arc Network."
+            "ERC-8004 registered agent with x402 settlement and client-side spending-limit patterns."
         ),
     }
 

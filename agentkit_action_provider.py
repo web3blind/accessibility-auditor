@@ -2,7 +2,7 @@
 AgentKit Action Provider for Accessibility Auditor.
 
 Allows any AgentKit-powered AI agent to run a paid WCAG 2.1 accessibility
-audit via x402 (0.10 USDC on Base Mainnet). Free audits are only available
+audit via x402 (0.10 USDC on Base Sepolia). Free audits are only available
 via the website UI at https://hexdrive.tech.
 
 Usage:
@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
+import re
+from typing import Any, Optional
 
 import httpx
 from pydantic import BaseModel, Field
@@ -36,15 +37,33 @@ class PaidAuditUrlSchema(BaseModel):
         description="The URL of the website to audit for WCAG 2.1 accessibility compliance."
     )
     private_key: str = Field(
-        description="EVM private key of the wallet to pay with (0.10 USDC on Base Mainnet)."
+        description="EVM private key of the wallet to pay with (0.10 USDC on Base Sepolia)."
     )
+    max_price_usd: Optional[float] = Field(
+        default=0.10,
+        description="Maximum allowed price for one audit in USD. Refuses payment if the service asks for more.",
+    )
+    remaining_daily_budget_usd: Optional[float] = Field(
+        default=None,
+        description="Optional remaining daily budget in USD. Refuses payment if the audit price is above this value.",
+    )
+
+
+def _parse_usd_price(value: Any) -> float | None:
+    """Parse x402-style price values such as '$0.10' into a float."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+    match = re.search(r"\d+(?:\.\d+)?", value)
+    return float(match.group(0)) if match else None
 
 
 # ── Paid audit action ──────────────────────────────────────────────────────────
 
 def run_paid_accessibility_audit(args: dict[str, Any]) -> str:
     """
-    Run a paid WCAG 2.1 accessibility audit via x402 (0.10 USDC on Base Mainnet).
+    Run a paid WCAG 2.1 accessibility audit via x402 (0.10 USDC on Base Sepolia).
     Automatically handles payment: signs EIP-3009 authorization and submits to facilitator.
     """
     import asyncio
@@ -56,9 +75,31 @@ def run_paid_accessibility_audit(args: dict[str, Any]) -> str:
 
     url = args["url"]
     private_key = args["private_key"]
+    max_price_usd = args.get("max_price_usd", 0.10)
+    remaining_daily_budget_usd = args.get("remaining_daily_budget_usd")
 
     async def _pay_and_audit():
         account = Account.from_key(private_key)
+
+        async with httpx.AsyncClient(timeout=20) as info_client:
+            info_response = await info_client.get(f"{SERVER_URL}/api/x402/info")
+            if info_response.status_code == 200:
+                info = info_response.json()
+                price_usd = _parse_usd_price(info.get("price"))
+                if price_usd is not None:
+                    if max_price_usd is not None and price_usd > float(max_price_usd):
+                        return {
+                            "success": False,
+                            "error": f"Audit price ${price_usd:.2f} exceeds max_price_usd ${float(max_price_usd):.2f}",
+                            "price_usd": price_usd,
+                        }
+                    if remaining_daily_budget_usd is not None and price_usd > float(remaining_daily_budget_usd):
+                        return {
+                            "success": False,
+                            "error": f"Audit price ${price_usd:.2f} exceeds remaining_daily_budget_usd ${float(remaining_daily_budget_usd):.2f}",
+                            "price_usd": price_usd,
+                        }
+
         signer = EthAccountSigner(account)
         scheme = ExactEvmScheme(signer=signer)
         client = x402Client()
@@ -76,6 +117,7 @@ def run_paid_accessibility_audit(args: dict[str, Any]) -> str:
                     "success": True,
                     "paid": True,
                     "payer": account.address,
+                    "price_checked_usd": _parse_usd_price(data.get("price")) or 0.10,
                     "url": data.get("url", url),
                     "score": data.get("score"),
                     "grade": data.get("grade"),
@@ -105,7 +147,7 @@ def accessibility_audit_action_provider():
 
     Provides two actions:
     - accessibility_free_audit: Free WCAG 2.1 audit (no payment)
-    - accessibility_paid_audit: Paid audit via x402 (0.10 USDC on Base Mainnet)
+    - accessibility_paid_audit: Paid audit via x402 (0.10 USDC on Base Sepolia)
 
     Example:
         agent_kit = AgentKit(AgentKitConfig(
@@ -125,9 +167,10 @@ def accessibility_audit_action_provider():
                 name="accessibility_paid_audit",
                 description=(
                     "Run a PAID WCAG 2.1 accessibility audit on a website via x402 protocol. "
-                    "Costs 0.10 USDC on Base Mainnet. Payment is automatic via EIP-3009. "
+                    "Costs 0.10 USDC on Base Sepolia. Payment is automatic via EIP-3009. "
                     "Returns full audit report with score, grade, and issue details. "
-                    "Requires a wallet private key with at least 0.10 USDC on Base Mainnet."
+                    "Checks max_price_usd and remaining_daily_budget_usd before paying. "
+                    "Requires a wallet private key with at least 0.10 USDC on Base Sepolia."
                 ),
                 schema=PaidAuditUrlSchema,
             )
@@ -171,7 +214,7 @@ if __name__ == "__main__":
 
     idx = sys.argv.index("--paid")
     pk = sys.argv[idx + 1]
-    print(f"Running PAID audit of {target_url} (0.10 USDC on Base Mainnet)...")
+    print(f"Running PAID audit of {target_url} (0.10 USDC on Base Sepolia)...")
     result = run_paid_accessibility_audit({"url": target_url, "private_key": pk})
 
     print(json.dumps(json.loads(result), indent=2, ensure_ascii=False))

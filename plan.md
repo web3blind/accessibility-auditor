@@ -15,6 +15,7 @@ Improve the existing accessibility auditor so that:
 - Building a hosted-only MCP/API gateway for private company code
 - Implementing browser-driven runtime/manual checks beyond current static/rendered HTML heuristics
 - Replacing Telegram bot transport or x402 integration
+- Adding subscription or split-payment product flows to the paid audit API
 
 ## Current findings
 - Core auditor currently runs only 12 coarse checks and duplicates some logic (`lang` checked twice).
@@ -175,6 +176,12 @@ Improve the existing accessibility auditor so that:
 - Update CLI to support `--format github-annotations`
 - Add tests for annotation generation.
 - Update README.md with workflow example.
+
+### Phase 14 — Arc agentic payment discovery alignment
+- Keep the product model simple: ERC-8004 identity, x402 pay-per-audit settlement, and client-side spending limits.
+- Extend `/api/x402/info` discovery metadata with agent identity, capabilities, pricing model, and recommended client controls.
+- Update AgentKit/client examples to check maximum price and remaining daily budget before payment.
+- Update README copy without presenting subscriptions or split payments as product features.
 
 ## Risks / assumptions
 - Existing saved audit JSON files may not contain new fields; renderers should tolerate missing keys.
