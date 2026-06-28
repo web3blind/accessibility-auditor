@@ -657,6 +657,9 @@ async def x402_info():
         "facilitator": _X402_FACILITATOR,
         "active_network": _X402_ACTIVE,
         "networks": networks_info,
+        # Backward-compatible legacy discovery fields kept for existing clients.
+        "erc8004_agent_id": 963,
+        "erc8004_registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
         "agent_identity": {
             "standard": "ERC-8004",
             "network": "arc_testnet",
