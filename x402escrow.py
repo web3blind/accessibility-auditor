@@ -424,11 +424,12 @@ def build_x402escrow_info() -> dict[str, Any]:
             "X402ESCROW_RPC_URL",
             "X402ESCROW_FACILITATOR_PRIVATE_KEY",
             "X402ESCROW_NETWORK or X402ESCROW_CHAIN_ID",
-            "X402ESCROW_CONTRACT_ADDRESS if overriding Fortytwo default",
+            "X402ESCROW_CONTRACT_ADDRESS set to your deployed Fortytwo x402Escrow proxy",
         ],
         "facilitator_role_note": (
-            "The configured facilitator address must have FACILITATOR_ROLE on the Fortytwo x402Escrow contract. "
-            "Fortytwo docs say DEFAULT_ADMIN_ROLE can grant/revoke this role; if you are not the contract admin, request the role from Fortytwo or deploy your own escrow instance."
+            "The configured facilitator address must have FACILITATOR_ROLE on the configured x402Escrow contract. "
+            "Fortytwo's public Discord guidance says external facilitators are not supported on the official contract, "
+            "so production deployments should use their open-source x402Escrow implementation with your own proxy/admin/facilitator."
         ),
         "description": (
             "Fortytwo x402Escrow-compatible metered multi-page accessibility audit. "
