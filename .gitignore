@@ -24,6 +24,8 @@ env/
 # Environment
 .env
 .env.local
+.info
+*.info
 config.json
 wallets_x402.json
 gen_wallets.py

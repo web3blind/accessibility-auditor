@@ -26,10 +26,23 @@ from telegram.constants import ChatAction
 from urllib.parse import urlparse
 from auditor import audit_website
 from genlayer_adjudication import adjudicate_report, DEFAULT_CONTRACT_ADDRESS, DEFAULT_NETWORK
+from site_auditor import audit_site
+from site_pricing import build_site_audit_quote, estimate_max_cost, format_usdc, clamp_max_pages
+from x402escrow import (
+    build_dry_run_escrow,
+    build_x402escrow_info,
+    build_x402escrow_payment_required,
+    check_facilitator_role,
+    parse_x_payment_header,
+    release_x402escrow,
+    settle_x402escrow_authorization,
+    x402escrow_dry_run_requests_allowed,
+    x402escrow_live_enabled,
+)
 from storage import AuditStorage
 from report_generator import ReportGenerator
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -48,7 +61,12 @@ except ImportError as _x402_err:
 
 # Load config
 CONFIG_PATH = Path("/root/accessibility-auditor-service/config.json")
-if CONFIG_PATH.exists():
+try:
+    _config_exists = CONFIG_PATH.exists()
+except PermissionError:
+    _config_exists = False
+
+if _config_exists:
     with open(CONFIG_PATH) as f:
         config = json.load(f)
     TOKEN = config.get("telegram_token")
@@ -63,13 +81,16 @@ if not TOKEN:
     print("ERROR: TELEGRAM_BOT_TOKEN not set in config.json or environment")
     sys.exit(1)
 
+_log_handlers = [logging.StreamHandler(sys.stdout)]
+try:
+    _log_handlers.insert(0, logging.FileHandler('/root/accessibility-auditor-service/bot.log'))
+except PermissionError:
+    _log_handlers.insert(0, logging.FileHandler('bot.log'))
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler('/root/accessibility-auditor-service/bot.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=_log_handlers
 )
 logger = logging.getLogger(__name__)
 
@@ -488,6 +509,18 @@ class AuditRequest(BaseModel):
     is_public: bool = False
 
 
+class SiteAuditRequest(BaseModel):
+    url: str
+    max_pages: int = 10
+    include_summary: bool = True
+    same_domain_only: bool = True
+    max_budget_usdc: str | None = None
+    output_format: str = "json"
+    per_page_timeout_seconds: int = 45
+    max_duration_seconds: int = 600
+    is_public: bool = False
+
+
 @app.post("/api/audit")
 async def submit_audit(request: AuditRequest, raw_request: Request):
     """Free audit — only accessible from the website UI (not for external agents/API clients).
@@ -599,6 +632,164 @@ async def list_audits(limit: int = 10, public_only: bool = False):
     return storage.list_audits(limit=limit, public_only=public_only)
 
 
+@app.get("/site-audits/{site_audit_id}")
+async def get_site_audit(site_audit_id: str):
+    """Get multi-page site audit result by ID."""
+    try:
+        result = storage.get_site_audit(site_audit_id)
+        if not result:
+            return HTMLResponse("<h1>404 - Site audit not found</h1>", status_code=404)
+        return HTMLResponse(content=report_gen.generate_html(result))
+    except Exception as e:
+        logger.error(f"Error retrieving site audit {site_audit_id}: {str(e)}")
+        return HTMLResponse(f"<h1>Error: {str(e)}</h1>", status_code=500)
+
+
+@app.get("/api/site-audits/{site_audit_id}")
+async def get_site_audit_json(site_audit_id: str):
+    result = storage.get_site_audit(site_audit_id)
+    if not result:
+        return JSONResponse({"error": "Site audit not found"}, status_code=404)
+    return result
+
+
+@app.get("/site-audits/{site_audit_id}.md")
+async def get_site_audit_markdown(site_audit_id: str):
+    result = storage.get_site_audit(site_audit_id)
+    if not result:
+        return PlainTextResponse("Site audit not found\n", status_code=404)
+    return PlainTextResponse(storage.site_report_to_markdown(result), media_type="text/markdown; charset=utf-8")
+
+
+@app.get("/api/site-audits/{site_audit_id}/markdown")
+async def get_site_audit_markdown_api(site_audit_id: str):
+    result = storage.get_site_audit(site_audit_id)
+    if not result:
+        return JSONResponse({"error": "Site audit not found"}, status_code=404)
+    return {"format": "markdown", "content": storage.site_report_to_markdown(result)}
+
+
+@app.post("/api/site-audit/quote")
+async def quote_site_audit(request: SiteAuditRequest):
+    """Cheap quote for a Fortytwo x402Escrow-style multi-page audit."""
+    url = request.url.strip()
+    if not is_valid_url(url):
+        return JSONResponse({"error": "Invalid URL format"}, status_code=400)
+    if not request.same_domain_only:
+        return JSONResponse({"error": "Only same_domain_only=true is supported in the MVP"}, status_code=400)
+    try:
+        return build_site_audit_quote(url, max_pages=request.max_pages, include_summary=request.include_summary)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@app.get("/api/x402escrow/info")
+async def x402escrow_info():
+    """Discovery endpoint for the Fortytwo x402Escrow-compatible site-audit mode."""
+    return build_x402escrow_info()
+
+
+@app.get("/api/x402escrow/facilitator-status")
+async def x402escrow_facilitator_status():
+    """Check configured facilitator wallet role without exposing secrets."""
+    try:
+        return check_facilitator_role()
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=503)
+
+
+@app.post("/api/x402escrow/site-audit")
+async def submit_x402escrow_site_audit(request: SiteAuditRequest, raw_request: Request):
+    """Fortytwo x402Escrow-compatible multi-page site audit.
+
+    Free website and Telegram flows stay single-page. This multi-page route
+    requires an X-PAYMENT authorization unless explicit local dry-run requests
+    are enabled with X402ESCROW_ALLOW_DRY_RUN_REQUESTS=1.
+    """
+    url = request.url.strip()
+    if not is_valid_url(url):
+        return JSONResponse({"error": "Invalid URL format"}, status_code=400)
+    if not request.same_domain_only:
+        return JSONResponse({"error": "Only same_domain_only=true is supported in the MVP"}, status_code=400)
+    try:
+        page_cap = clamp_max_pages(request.max_pages)
+        max_budget = request.max_budget_usdc or format_usdc(estimate_max_cost(page_cap, request.include_summary))
+        payment_header = raw_request.headers.get("x-payment") or raw_request.headers.get("X-PAYMENT")
+        payment_authorization = parse_x_payment_header(payment_header)
+        dry_run_allowed = x402escrow_dry_run_requests_allowed()
+
+        if payment_authorization is None and not dry_run_allowed:
+            return JSONResponse(
+                build_x402escrow_payment_required(url, max_budget, page_cap, request.include_summary),
+                status_code=402,
+                headers={"payment-required": "true"},
+            )
+
+        if payment_authorization is not None:
+            if not x402escrow_live_enabled():
+                return JSONResponse(
+                    {
+                        "error": "Fortytwo x402Escrow live settlement is not configured on this deployment.",
+                        "detail": "The service will not run a paid multi-page audit until funds are locked with settle().",
+                        "docs": "/api/x402escrow/info",
+                    },
+                    status_code=501,
+                )
+            escrow_metadata = settle_x402escrow_authorization(payment_authorization, url)
+            storage.save_pending_escrow(escrow_metadata["escrow_id"], escrow_metadata)
+        else:
+            escrow_metadata = build_dry_run_escrow(url, max_budget_usdc=max_budget)
+
+        try:
+            result = await audit_site(
+                url,
+                max_pages=page_cap,
+                include_summary=request.include_summary,
+                max_budget_usdc=max_budget,
+                per_page_timeout_seconds=max(5, min(int(request.per_page_timeout_seconds), 90)),
+                max_duration_seconds=max(30, min(int(request.max_duration_seconds), 1800)),
+            )
+        except Exception:
+            if payment_authorization is not None:
+                release_data = release_x402escrow(escrow_metadata["escrow_id"], "0.00")
+                storage.mark_escrow_released(escrow_metadata["escrow_id"], release_data)
+                escrow_metadata.update(release_data)
+            raise
+
+        if payment_authorization is not None:
+            actual_settled = result.get("pricing", {}).get("actual_settled", "0.00")
+            release_data = release_x402escrow(escrow_metadata["escrow_id"], actual_settled)
+            storage.mark_escrow_released(escrow_metadata["escrow_id"], release_data)
+            escrow_metadata.update(release_data)
+        result["escrow"] = escrow_metadata
+        site_audit_id = str(result.get("site_audit_id"))
+        storage.save_site_audit_with_id(site_audit_id, result, is_public=request.is_public)
+        report_url = f"https://hexdrive.tech/site-audits/{site_audit_id}"
+        response = {
+            "paid": payment_authorization is not None,
+            "payment_mode": "x402escrow" if payment_authorization is not None else "x402escrow_dry_run",
+            "audit_type": "site",
+            "site_audit_id": site_audit_id,
+            "report_url": report_url,
+            "markdown_url": f"{report_url}.md",
+            "markdown_api_url": f"https://hexdrive.tech/api/site-audits/{site_audit_id}/markdown",
+            "pages_audited": result.get("summary", {}).get("pages_audited", 0),
+            "pages_failed": result.get("summary", {}).get("pages_failed", 0),
+            "actual_settled_usdc": result.get("pricing", {}).get("actual_settled"),
+            "refund_usdc": result.get("pricing", {}).get("refund"),
+            "escrow": result.get("escrow"),
+            "result": result,
+        }
+        if request.output_format.lower() == "markdown":
+            response["markdown"] = storage.site_report_to_markdown(result)
+        return response
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as e:
+        logger.error(f"Site audit error for {url}: {e}", exc_info=True)
+        return JSONResponse({"error": f"Site audit failed: {e}"}, status_code=500)
+
+
 @app.post("/api/audit/paid")
 async def submit_paid_audit(request: AuditRequest):
     """
@@ -656,6 +847,7 @@ async def x402_info():
         "pay_to": _X402_SERVER_ADDRESS,
         "facilitator": _X402_FACILITATOR,
         "active_network": _X402_ACTIVE,
+        "escrow_mode": build_x402escrow_info(),
         "networks": networks_info,
         # Backward-compatible legacy discovery fields kept for existing clients.
         "erc8004_agent_id": 963,
@@ -676,6 +868,8 @@ async def x402_info():
             "structured_json_report",
             "html_report",
             "x402_paid_api",
+            "multi_page_site_audit",
+            "fortytwo_x402escrow_metered_site_audit",
         ],
         "agentic_payment_pattern": {
             "identity": "ERC-8004 registered accessibility audit agent on Arc Testnet",

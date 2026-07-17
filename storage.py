@@ -73,6 +73,57 @@ class AuditStorage:
         
         with open(json_path, 'r', encoding='utf-8') as f:
             return json.load(f)
+
+    def save_site_audit_with_id(self, site_audit_id: str, report: Dict, is_public: bool = False) -> str:
+        """Save a multi-page site audit without changing single-page filenames."""
+        report['is_public'] = is_public
+        markdown = self.site_report_to_markdown(report)
+        md_path = self.storage_dir / f"site_audit_{site_audit_id}.md"
+        json_path = self.storage_dir / f"site_audit_{site_audit_id}.json"
+        with open(md_path, 'w', encoding='utf-8') as f:
+            f.write(markdown)
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+        return site_audit_id
+
+    def save_site_audit(self, report: Dict, is_public: bool = False) -> str:
+        site_audit_id = report.get('site_audit_id') or f"site_{self.generate_id()}"
+        report['site_audit_id'] = site_audit_id
+        return self.save_site_audit_with_id(site_audit_id, report, is_public=is_public)
+
+    def get_site_audit(self, site_audit_id: str) -> Optional[Dict]:
+        json_path = self.storage_dir / f"site_audit_{site_audit_id}.json"
+        if not json_path.exists():
+            return None
+        with open(json_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+    def save_pending_escrow(self, escrow_id: str, data: Dict) -> str:
+        """Persist a live escrow before doing paid work so recovery can release/refund."""
+        pending_dir = self.storage_dir / "pending_escrows"
+        pending_dir.mkdir(exist_ok=True)
+        safe_id = escrow_id.replace("/", "_")
+        payload = dict(data)
+        payload.setdefault('updated_at', datetime.now().isoformat())
+        with open(pending_dir / f"{safe_id}.json", 'w', encoding='utf-8') as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False)
+        return escrow_id
+
+    def get_pending_escrow(self, escrow_id: str) -> Optional[Dict]:
+        pending_dir = self.storage_dir / "pending_escrows"
+        safe_id = escrow_id.replace("/", "_")
+        path = pending_dir / f"{safe_id}.json"
+        if not path.exists():
+            return None
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+    def mark_escrow_released(self, escrow_id: str, release_data: Dict) -> None:
+        pending = self.get_pending_escrow(escrow_id) or {}
+        pending.update(release_data)
+        pending['status'] = release_data.get('status', 'released')
+        pending['updated_at'] = datetime.now().isoformat()
+        self.save_pending_escrow(escrow_id, pending)
     
     def _report_to_markdown(self, report: Dict) -> str:
         """Convert audit report to markdown format"""
@@ -131,6 +182,38 @@ class AuditStorage:
             lines.append("✅ No accessibility issues found!")
             lines.append("")
         
+        return "\n".join(lines)
+
+    def site_report_to_markdown(self, report: Dict) -> str:
+        """Convert a multi-page site report to compact markdown."""
+        summary = report.get('summary', {})
+        lines = [
+            "# Multi-Page Accessibility Audit Report",
+            "",
+            f"**Root URL:** {report.get('root_url', report.get('url', 'N/A'))}",
+            f"**Date:** {report.get('timestamp', '')}",
+            f"**Score:** {report.get('score', 0)}/100 ({report.get('grade', 'N/A')})",
+            "",
+            "## Summary",
+            "",
+            f"- **Pages audited:** {summary.get('pages_audited', 0)}",
+            f"- **Pages failed:** {summary.get('pages_failed', 0)}",
+            f"- **Critical:** {report.get('critical', 0)}",
+            f"- **Warnings:** {report.get('warnings', 0)}",
+            f"- **Info:** {report.get('info', 0)}",
+            f"- **Assessment:** {summary.get('overall_assessment', '')}",
+            "",
+            "## Repeated Issues",
+            "",
+        ]
+        for issue in report.get('repeated_issues', [])[:20]:
+            lines.append(f"- **{issue.get('severity', 'info').upper()}** {issue.get('title')} — {issue.get('affected_pages')} pages")
+            examples = issue.get('example_urls') or []
+            if examples:
+                lines.append(f"  - Examples: {', '.join(examples[:3])}")
+        lines.extend(["", "## Worst Pages", ""])
+        for page in report.get('worst_pages', [])[:10]:
+            lines.append(f"- {page.get('url')} — score {page.get('score')}, critical {page.get('critical')}, warnings {page.get('warnings')}")
         return "\n".join(lines)
     
     def list_audits(self, limit: int = 10, public_only: bool = False) -> list:

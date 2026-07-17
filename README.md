@@ -94,6 +94,79 @@ async with x402HttpxClient(client) as http:
     print(response.json())  # score, grade, issues, report_url
 ```
 
+## Fortytwo x402Escrow Multi-Page Audits
+
+The public web UI and Telegram bot intentionally stay **single-page and free**.
+Multi-page website audits are reserved for Fortytwo x402Escrow-style paid agent
+flows because the final cost depends on how many pages are discovered and
+successfully audited.
+
+Discovery / quote:
+
+```http
+GET  https://hexdrive.tech/api/x402escrow/info
+POST https://hexdrive.tech/api/site-audit/quote
+```
+
+Paid endpoint:
+
+```http
+POST https://hexdrive.tech/api/x402escrow/site-audit
+X-PAYMENT: <Fortytwo x402Escrow authorization>
+```
+
+Request body:
+
+```json
+{
+  "url": "https://example.com",
+  "max_pages": 30,
+  "include_summary": true,
+  "same_domain_only": true,
+  "max_budget_usdc": "3.30",
+  "output_format": "markdown",
+  "per_page_timeout_seconds": 45,
+  "max_duration_seconds": 600
+}
+```
+
+Safety boundaries:
+
+- hard cap: 100 pages;
+- same-domain only;
+- dangerous/private paths such as logout, admin, checkout, payment and account pages are skipped;
+- per-page timeout and whole-job timeout prevent hanging scans;
+- pages that fail before a report is produced are not billed;
+- Markdown output is available for agents at `/site-audits/{site_audit_id}.md`
+  and `/api/site-audits/{site_audit_id}/markdown`.
+
+If the endpoint is called without `X-PAYMENT`, it returns HTTP 402 with the
+payment requirements. Local dry-run requests can be enabled only by the operator
+with `X402ESCROW_ALLOW_DRY_RUN_REQUESTS=1`; production should leave that off.
+
+Live settlement is wired behind explicit env switches. To activate it, configure:
+
+```bash
+export X402ESCROW_LIVE=true
+export X402ESCROW_NETWORK=base        # or monad
+export X402ESCROW_RPC_URL="..."
+export X402ESCROW_FACILITATOR_PRIVATE_KEY="..."
+# optional override if Fortytwo changes/deploys a different proxy:
+export X402ESCROW_CONTRACT_ADDRESS="0x9562f50f73d8ee22276f13a18d051456d8d137a0"
+```
+
+Before enabling production traffic, verify the configured wallet:
+
+```http
+GET https://hexdrive.tech/api/x402escrow/facilitator-status
+```
+
+The address must have `FACILITATOR_ROLE` on the configured Fortytwo contract;
+otherwise `settle()` / `release()` will revert and the service must not run the
+multi-page job. Fortytwo docs say `DEFAULT_ADMIN_ROLE` can grant/revoke
+facilitators. If this deployment is not the contract admin, request the role from
+Fortytwo or deploy an owned escrow instance.
+
 ## Access
 
 ### Telegram Bot
@@ -180,11 +253,16 @@ accessibility-auditor/
 
 | Endpoint | Method | Auth | Description |
 |---|---|---|---|
-| `/api/audit/paid` | POST | x402 (0.10 USDC) | Full audit, returns JSON immediately |
+| `/api/audit/paid` | POST | x402 (0.10 USDC) | Single-page audit, returns JSON immediately |
+| `/api/x402escrow/site-audit` | POST | Fortytwo x402Escrow | Multi-page metered audit, JSON/Markdown result |
+| `/api/site-audit/quote` | POST | none | Quote max budget for a multi-page paid audit |
 | `/api/x402/info` | GET | none | Payment discovery info for agents |
-| `/api/audit` | POST | none* | Submit audit (web UI only) |
+| `/api/x402escrow/info` | GET | none | Fortytwo x402Escrow multi-page discovery |
+| `/api/audit` | POST | none* | Submit single-page audit (web UI only) |
 | `/api/audit/{id}/status` | GET | none | Poll audit status + result |
-| `/audits/{id}` | GET | none | HTML report |
+| `/audits/{id}` | GET | none | Single-page HTML report |
+| `/site-audits/{id}` | GET | none | Multi-page HTML report |
+| `/site-audits/{id}.md` | GET | none | Multi-page Markdown report for agents |
 
 *Free endpoint checks `Referer: hexdrive.tech` — not available for external API calls.
 

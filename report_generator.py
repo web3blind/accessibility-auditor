@@ -14,6 +14,8 @@ class ReportGenerator:
     
     def generate_html(self, report: Dict) -> str:
         """Convert audit report dict to HTML"""
+        if report.get('audit_type') == 'site':
+            return self.generate_site_html(report)
         
         score = report.get('score', 0)
         grade = report.get('grade', 'N/A')
@@ -494,6 +496,103 @@ class ReportGenerator:
 </html>
 """
         
+        return html
+
+    def generate_site_html(self, report: Dict) -> str:
+        """Render a site-level multi-page audit report."""
+        score = report.get('score', 0)
+        grade = html_module.escape(str(report.get('grade', 'N/A')))
+        root_url = html_module.escape(str(report.get('root_url') or report.get('url') or 'N/A'))
+        timestamp = html_module.escape(str(report.get('timestamp', '')))
+        summary = report.get('summary') or {}
+        pricing = report.get('pricing') or {}
+        escrow = report.get('escrow') or {}
+        score_color = self._get_score_color(score)
+
+        def esc(value):
+            return html_module.escape(str(value if value is not None else ''))
+
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-page Accessibility Audit - {root_url}</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #222; background: #f3f4f8; margin: 0; padding: 20px; }}
+        .container {{ max-width: 1000px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.14); overflow: hidden; }}
+        header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 34px; }}
+        main {{ padding: 30px; }}
+        h1, h2, h3 {{ line-height: 1.25; }}
+        .score {{ display: inline-block; min-width: 110px; text-align: center; padding: 18px; border-radius: 999px; background: {score_color}; color: white; font-size: 2rem; font-weight: 700; }}
+        .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin: 20px 0; }}
+        .card {{ border: 1px solid #e5e7eb; border-left: 5px solid #667eea; border-radius: 8px; padding: 14px; background: #fff; }}
+        .critical {{ border-left-color: #dc3545; }} .warning {{ border-left-color: #b7791f; }} .info {{ border-left-color: #0f7490; }}
+        .muted {{ color: #555; }} code {{ word-break: break-all; }}
+        a:focus {{ outline: 3px solid #111827; outline-offset: 2px; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 12px 0; }} th, td {{ text-align: left; border-bottom: 1px solid #e5e7eb; padding: 8px; vertical-align: top; }}
+    </style>
+</head>
+<body>
+<div class="container">
+<header>
+    <h1>Multi-page Accessibility Audit Report</h1>
+    <p>{root_url}</p>
+    <p class="muted">{timestamp}</p>
+</header>
+<main>
+    <section aria-labelledby="summary-heading">
+        <h2 id="summary-heading">Executive summary</h2>
+        <p><span class="score">{score}</span> <strong>{grade}</strong></p>
+        <p>{esc(summary.get('overall_assessment'))}</p>
+        <div class="grid">
+            <div class="card"><strong>Pages audited</strong><br>{esc(summary.get('pages_audited', 0))}</div>
+            <div class="card"><strong>Pages failed</strong><br>{esc(summary.get('pages_failed', 0))}</div>
+            <div class="card critical"><strong>Critical</strong><br>{esc(report.get('critical', 0))}</div>
+            <div class="card warning"><strong>Warnings</strong><br>{esc(report.get('warnings', 0))}</div>
+            <div class="card info"><strong>Info</strong><br>{esc(report.get('info', 0))}</div>
+        </div>
+    </section>
+    <section aria-labelledby="pricing-heading">
+        <h2 id="pricing-heading">Fortytwo x402Escrow pricing</h2>
+        <p>Mode: <code>{esc(escrow.get('mode'))}</code>; network: <code>{esc(escrow.get('network'))}</code>; escrow id: <code>{esc(escrow.get('escrow_id'))}</code></p>
+        <div class="grid">
+            <div class="card"><strong>Max locked</strong><br>{esc(pricing.get('max_locked'))} {esc(pricing.get('currency', 'USDC'))}</div>
+            <div class="card"><strong>Actual settled</strong><br>{esc(pricing.get('actual_settled'))} {esc(pricing.get('currency', 'USDC'))}</div>
+            <div class="card"><strong>Refund</strong><br>{esc(pricing.get('refund'))} {esc(pricing.get('currency', 'USDC'))}</div>
+            <div class="card"><strong>Price per page</strong><br>{esc(pricing.get('price_per_page'))} {esc(pricing.get('currency', 'USDC'))}</div>
+        </div>
+    </section>
+"""
+        repeated = report.get('repeated_issues') or []
+        if repeated:
+            html += "<section><h2>Repeated issues across pages</h2>"
+            for issue in repeated[:20]:
+                severity = esc(issue.get('severity', 'info'))
+                html += f"<article class='card {severity}'><h3>{esc(issue.get('title'))}</h3><p><strong>{severity.upper()}</strong> on {esc(issue.get('affected_pages'))} page(s).</p>"
+                examples = issue.get('example_urls') or []
+                if examples:
+                    html += "<ul>" + "".join(f"<li><code>{esc(url)}</code></li>" for url in examples[:5]) + "</ul>"
+                html += "</article>"
+            html += "</section>"
+
+        pages = report.get('page_reports') or []
+        if pages:
+            html += "<section><h2>Audited pages</h2><table><thead><tr><th>URL</th><th>Status</th><th>Score</th><th>Critical</th><th>Warnings</th></tr></thead><tbody>"
+            for page in pages:
+                html += f"<tr><td><code>{esc(page.get('url'))}</code></td><td>{esc(page.get('status', 'ok'))}</td><td>{esc(page.get('score', ''))}</td><td>{esc(page.get('critical', ''))}</td><td>{esc(page.get('warnings', ''))}</td></tr>"
+            html += "</tbody></table></section>"
+
+        manual_checks = report.get('manual_checks') or []
+        if manual_checks:
+            html += "<section><h2>Manual follow-up</h2><ul>" + "".join(f"<li>{esc(item)}</li>" for item in manual_checks) + "</ul></section>"
+
+        html += """
+</main>
+</div>
+</body>
+</html>
+"""
         return html
     
     @staticmethod
