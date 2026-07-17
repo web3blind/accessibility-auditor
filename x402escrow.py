@@ -307,7 +307,7 @@ def settle_x402escrow_authorization(authorization: dict[str, Any], root_url: str
         auth["s"],
     ).build_transaction({
         "from": account.address,
-        "nonce": w3.eth.get_transaction_count(account.address),
+        "nonce": w3.eth.get_transaction_count(account.address, "pending"),
         "chainId": cfg.chain_id,
     })
     signed = account.sign_transaction(tx)
@@ -349,15 +349,27 @@ def settle_x402escrow_authorization(authorization: dict[str, Any], root_url: str
     }
 
 
+def _normalize_bytes32_hex(value: str) -> str:
+    """Return a 0x-prefixed bytes32 hex string for web3.py contract calls."""
+    text = str(value)
+    if text.startswith("0x"):
+        text = text[2:]
+    if len(text) != 64:
+        raise ValueError("bytes32 value must be 32 bytes")
+    int(text, 16)
+    return "0x" + text
+
+
 def release_x402escrow(escrow_id: str, facilitator_amount_usdc: str | Decimal) -> dict[str, Any]:
     """Release actual cost to facilitator and refund the remainder to the client."""
     cfg = load_x402escrow_config()
     Web3, w3, contract = _web3_and_contract(cfg)
     account = _facilitator_account(w3, cfg)
     amount_units = usdc_to_units(facilitator_amount_usdc)
-    tx = contract.functions.release(escrow_id, amount_units).build_transaction({
+    escrow_id_arg = _normalize_bytes32_hex(escrow_id)
+    tx = contract.functions.release(escrow_id_arg, amount_units).build_transaction({
         "from": account.address,
-        "nonce": w3.eth.get_transaction_count(account.address),
+        "nonce": w3.eth.get_transaction_count(account.address, "pending"),
         "chainId": cfg.chain_id,
     })
     signed = account.sign_transaction(tx)
@@ -379,7 +391,7 @@ def release_x402escrow(escrow_id: str, facilitator_amount_usdc: str | Decimal) -
 def get_x402escrow_status(escrow_id: str) -> dict[str, Any]:
     cfg = load_x402escrow_config()
     _, _, contract = _web3_and_contract(cfg)
-    view = contract.functions.getEscrow(escrow_id).call()
+    view = contract.functions.getEscrow(_normalize_bytes32_hex(escrow_id)).call()
     return {
         "escrow_id": escrow_id,
         "client": view[0],
