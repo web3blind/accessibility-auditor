@@ -41,6 +41,15 @@ from x402escrow import (
 )
 from storage import AuditStorage
 from report_generator import ReportGenerator
+from errloop.inbox import (
+    build_fingerprint,
+    error_summary as errloop_error_summary,
+    get_error as errloop_get_error,
+    list_errors as errloop_list_errors,
+    mark_error_status as errloop_mark_error_status,
+    record_error as errloop_record_error,
+    secure_compare as errloop_secure_compare,
+)
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
@@ -102,6 +111,38 @@ api_thread = None
 # Initialize services
 storage = AuditStorage()
 report_gen = ReportGenerator()
+
+
+def _record_exception(*, exc: Exception, route: str | None = None, task_name: str | None = None, sample_url: str | None = None, severity: str = "error", metadata: dict | None = None):
+    """Record a safe Errloop issue without letting monitoring break user flow."""
+    try:
+        return errloop_record_error(
+            error=exc,
+            service="accessibility-auditor",
+            route=route,
+            task_name=task_name,
+            sample_url=sample_url,
+            severity=severity,
+            metadata=metadata or {},
+        )
+    except Exception as monitor_exc:
+        logger.error(f"Errloop recording failed: {monitor_exc}", exc_info=True)
+        return None
+
+
+def _errloop_authorized(request: Request) -> bool:
+    token = os.getenv("ERRLOOP_API_TOKEN", "")
+    if not token:
+        return False
+    auth = request.headers.get("authorization", "")
+    bearer = auth.removeprefix("Bearer ").strip() if auth.lower().startswith("bearer ") else ""
+    return errloop_secure_compare(bearer, token)
+
+
+def _errloop_forbidden(not_configured: bool = False):
+    if not_configured:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return JSONResponse({"error": "Forbidden"}, status_code=403)
 
 
 def is_valid_url(url: str) -> bool:
@@ -319,6 +360,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await processing_msg.edit_text(report, parse_mode="Markdown")
         
     except Exception as e:
+        _record_exception(exc=e, task_name="telegram.message_handler", sample_url=user_message, severity="error")
         logger.error(f"Audit error: {str(e)}", exc_info=True)
         await processing_msg.edit_text(
             f"❌ Error during audit:\n\n{str(e)[:200]}"
@@ -390,6 +432,72 @@ if X402_ENABLED:
     except Exception as _xe:
         X402_ENABLED = False
         logging.getLogger(__name__).warning(f"x402 setup failed: {_xe}")
+
+
+@app.exception_handler(Exception)
+async def errloop_fastapi_exception_handler(request: Request, exc: Exception):
+    _record_exception(
+        exc=exc,
+        route=request.url.path,
+        sample_url=str(request.url),
+        severity="critical" if request.url.path.startswith("/api/x402") else "error",
+        metadata={"method": request.method},
+    )
+    logger.error(f"Unhandled API error on {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse({"error": "Internal server error"}, status_code=500)
+
+
+def _errloop_auth_response(request: Request):
+    if _errloop_authorized(request):
+        return None
+    return _errloop_forbidden(not_configured=not bool(os.getenv("ERRLOOP_API_TOKEN", "")))
+
+
+@app.get("/api/agent/errors/summary")
+async def agent_error_summary(request: Request, limit: int = 10):
+    auth_error = _errloop_auth_response(request)
+    if auth_error:
+        return auth_error
+    return errloop_error_summary(limit=limit)
+
+
+@app.get("/api/agent/errors")
+async def agent_list_errors(request: Request, status: str = "active", limit: int = 20, since: str | None = None):
+    auth_error = _errloop_auth_response(request)
+    if auth_error:
+        return auth_error
+    return {"errors": errloop_list_errors(status=status, limit=limit, since=since)}
+
+
+@app.get("/api/agent/errors/{fingerprint}")
+async def agent_get_error(fingerprint: str, request: Request):
+    auth_error = _errloop_auth_response(request)
+    if auth_error:
+        return auth_error
+    item = errloop_get_error(fingerprint)
+    if not item:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return item
+
+
+@app.post("/api/agent/errors/{fingerprint}/status")
+async def agent_mark_error_status(fingerprint: str, request: Request):
+    auth_error = _errloop_auth_response(request)
+    if auth_error:
+        return auth_error
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    status = str(body.get("status") or "")
+    reason = body.get("reason")
+    try:
+        item = errloop_mark_error_status(fingerprint, status, reason=reason)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    if not item:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return item
 
 
 @app.get("/")
@@ -500,6 +608,7 @@ async def get_audit(audit_id: str):
         
         return HTMLResponse(content=report_gen.generate_html(result))
     except Exception as e:
+        _record_exception(exc=e, route="/audits/{audit_id}", sample_task_id=audit_id, severity="error")
         logger.error(f"Error retrieving audit {audit_id}: {str(e)}")
         return HTMLResponse(f"<h1>Error: {str(e)}</h1>", status_code=500)
 
@@ -558,6 +667,7 @@ async def submit_audit(request: AuditRequest, raw_request: Request):
             )
             storage.save_audit_with_id(audit_id, result, is_public=request.is_public)
         except Exception as e:
+            _record_exception(exc=e, task_name="background.single_page_audit", sample_task_id=audit_id, sample_url=url, severity="error")
             logger.error(f"Background audit error: {e}")
             storage.save_audit_with_id(audit_id, {
                 "url": url,
@@ -641,6 +751,7 @@ async def get_site_audit(site_audit_id: str):
             return HTMLResponse("<h1>404 - Site audit not found</h1>", status_code=404)
         return HTMLResponse(content=report_gen.generate_html(result))
     except Exception as e:
+        _record_exception(exc=e, route="/site-audits/{site_audit_id}", sample_task_id=site_audit_id, severity="error")
         logger.error(f"Error retrieving site audit {site_audit_id}: {str(e)}")
         return HTMLResponse(f"<h1>Error: {str(e)}</h1>", status_code=500)
 
@@ -695,6 +806,7 @@ async def x402escrow_facilitator_status():
     try:
         return check_facilitator_role()
     except Exception as exc:
+        _record_exception(exc=exc, route="/api/x402escrow/facilitator-status", severity="warning")
         return JSONResponse({"error": str(exc)}, status_code=503)
 
 
@@ -749,7 +861,8 @@ async def submit_x402escrow_site_audit(request: SiteAuditRequest, raw_request: R
                 per_page_timeout_seconds=max(5, min(int(request.per_page_timeout_seconds), 90)),
                 max_duration_seconds=max(30, min(int(request.max_duration_seconds), 1800)),
             )
-        except Exception:
+        except Exception as exc:
+            _record_exception(exc=exc, route="/api/x402escrow/site-audit", sample_url=url, severity="critical" if payment_authorization is not None else "error", metadata={"paid": payment_authorization is not None})
             if payment_authorization is not None:
                 release_data = release_x402escrow(escrow_metadata["escrow_id"], "0.00")
                 storage.mark_escrow_released(escrow_metadata["escrow_id"], release_data)
@@ -786,6 +899,7 @@ async def submit_x402escrow_site_audit(request: SiteAuditRequest, raw_request: R
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     except Exception as e:
+        _record_exception(exc=e, route="/api/x402escrow/site-audit", sample_url=url, severity="error")
         logger.error(f"Site audit error for {url}: {e}", exc_info=True)
         return JSONResponse({"error": f"Site audit failed: {e}"}, status_code=500)
 
@@ -819,6 +933,7 @@ async def submit_paid_audit(request: AuditRequest):
             **result
         }
     except Exception as e:
+        _record_exception(exc=e, route="/api/audit/paid", sample_url=url, severity="critical")
         logger.error(f"Paid audit error for {url}: {e}")
         return JSONResponse({"error": f"Audit failed: {e}"}, status_code=500)
 
@@ -935,6 +1050,7 @@ def run_fastapi_server():
         logger.info(f"FastAPI server starting on http://{API_HOST}:{API_PORT}")
         api_server.run()
     except Exception as e:
+        _record_exception(exc=e, task_name="fastapi.server_thread", severity="critical")
         logger.error(f"FastAPI server error: {str(e)}")
         logger.error(traceback.format_exc())
         # Don't exit; let the main thread detect this and handle it
@@ -980,6 +1096,7 @@ def run_telegram_bot():
             
         except Exception as e:
             retry_count += 1
+            _record_exception(exc=e, task_name="telegram.run_polling", severity="critical", metadata={"attempt": retry_count})
             logger.error(f"Telegram bot error (attempt {retry_count}/{max_retries}): {str(e)}")
             logger.error(traceback.format_exc())
             
@@ -993,10 +1110,32 @@ def run_telegram_bot():
     logger.info("Telegram bot thread exiting")
 
 
+def _install_errloop_runtime_hooks():
+    previous_sys_hook = sys.excepthook
+
+    def _sys_hook(exc_type, exc, tb):
+        if isinstance(exc, BaseException):
+            _record_exception(exc=exc, task_name="sys.excepthook", severity="critical")
+        previous_sys_hook(exc_type, exc, tb)
+
+    sys.excepthook = _sys_hook
+
+    previous_threading_hook = getattr(threading, "excepthook", None)
+
+    def _threading_hook(args):
+        if isinstance(args.exc_value, BaseException):
+            _record_exception(exc=args.exc_value, task_name=f"thread.{getattr(args.thread, 'name', 'unknown')}", severity="critical")
+        if previous_threading_hook:
+            previous_threading_hook(args)
+
+    threading.excepthook = _threading_hook
+
+
 def main():
     """Main entry point with proper daemon management"""
     global api_thread
     
+    _install_errloop_runtime_hooks()
     logger.info("=" * 60)
     logger.info("Accessibility Auditor Bot + API (FIXED VERSION)")
     logger.info("=" * 60)
@@ -1023,6 +1162,7 @@ def main():
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
+        _record_exception(exc=e, task_name="process.main", severity="critical")
         logger.error(f"Fatal error in main: {str(e)}")
         logger.error(traceback.format_exc())
     finally:
