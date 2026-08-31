@@ -19,7 +19,7 @@ import urllib.request
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-DEFAULT_CONTRACT_ADDRESS = "0x188C501e7bc1678C1bB7af2cf19A702194b9FB33"
+DEFAULT_CONTRACT_ADDRESS = "0x22937fd5Ab404fEC926E4fB01791E5CaD5935A92"
 DEFAULT_NETWORK = "testnet-bradbury"
 DEFAULT_CLI_WORKDIR = "/home/assistent/ai-projects/retro-drops-generator/genlayer-accessibility-court"
 DEFAULT_EXPLORER_BASE_URL = "https://explorer-bradbury.genlayer.com"
@@ -29,6 +29,7 @@ DEFAULT_CLAIM = (
 )
 
 VALID_VERDICTS = {"supported", "partially_supported", "not_supported", "insufficient_evidence"}
+VALID_IMPACT_LEVELS = {"none", "low", "medium", "high", "critical", "unknown"}
 
 
 def build_evidence(report: Dict[str, Any], report_url: Optional[str] = None) -> Dict[str, Any]:
@@ -78,22 +79,28 @@ def _local_decision(evidence: Dict[str, Any]) -> Dict[str, Any]:
     warnings = int(counts.get("warnings") or 0)
     manual_checks = evidence.get("manual_checks") or []
 
+    blockers: List[str] = []
     if score is None:
         verdict = "insufficient_evidence"
+        impact_level = "unknown"
         confidence = 50
         rationale = "The evidence does not include a numeric accessibility score, so the accessibility claim cannot be adjudicated reliably."
     elif critical > 0 or score < 60:
         verdict = "not_supported"
+        impact_level = "critical" if critical else "high"
         confidence = 85 if critical else 75
         rationale = "The accessibility claim is not supported: the audit evidence contains critical blockers or a low score."
+        blockers.append("Critical accessibility issues or low score block the broad accessibility claim.")
     elif warnings > 0 or score < 85:
         verdict = "partially_supported"
+        impact_level = "medium"
         confidence = 72
         rationale = "The claim is only partially supported: no critical blocker dominates the evidence, but warnings or a medium score still require fixes and manual verification."
     else:
-        verdict = "supported"
+        verdict = "partially_supported"
+        impact_level = "low"
         confidence = 70
-        rationale = "The automated evidence supports the claim, but final confidence still depends on manual screen-reader and keyboard testing."
+        rationale = "Automated checks support the claim, but final confidence still depends on manual screen-reader and keyboard testing."
 
     missing = []
     if manual_checks:
@@ -103,8 +110,10 @@ def _local_decision(evidence: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "verdict": verdict,
+        "impact_level": impact_level,
         "confidence": confidence,
         "rationale_en": rationale,
+        "accessibility_blockers": blockers,
         "key_findings": [
             f"Score: {score}/100" if score is not None else "Score is missing",
             f"Critical issues: {critical}",
@@ -135,6 +144,9 @@ def _validate_decision(data: Dict[str, Any]) -> Dict[str, Any]:
     verdict = data.get("verdict")
     if verdict not in VALID_VERDICTS:
         raise ValueError(f"Invalid GenLayer verdict: {verdict!r}")
+    impact_level = data.get("impact_level")
+    if impact_level is not None and impact_level not in VALID_IMPACT_LEVELS:
+        raise ValueError(f"Invalid GenLayer impact_level: {impact_level!r}")
     confidence = data.get("confidence")
     if not isinstance(confidence, int) or not 0 <= confidence <= 100:
         raise ValueError(f"Invalid GenLayer confidence: {confidence!r}")
@@ -197,7 +209,7 @@ def _fetch_latest_contract_transaction(contract_address: str) -> Optional[Dict[s
         return None
 
     base = os.getenv("GENLAYER_EXPLORER_BASE_URL", DEFAULT_EXPLORER_BASE_URL).rstrip("/")
-    query = urllib.parse.urlencode({"address": contract_address, "page": 1, "page_size": 1})
+    query = urllib.parse.urlencode({"address": contract_address, "page": 1, "page_size": 5})
     request = urllib.request.Request(
         f"{base}/api/v1/transactions?{query}",
         headers={"User-Agent": "hexdrive-accessibility-auditor/1.0"},
@@ -211,7 +223,21 @@ def _fetch_latest_contract_transaction(contract_address: str) -> Optional[Dict[s
     transactions = data.get("transactions") or []
     if not transactions:
         return None
+
+    # Prefer the newest completed method call over deployment/pending/undetermined
+    # transactions. The explorer endpoint returns deployments and calls for the
+    # address, and recent calls can still be in temporary or failed states.
     tx = transactions[0]
+    completed_call = None
+    newest_call = None
+    for candidate in transactions:
+        encoded = ((candidate.get("data") or {}).get("params") or {}).get("encoded_data") or {}
+        if encoded.get("contract_code") is None:
+            newest_call = newest_call or candidate
+            if candidate.get("status") in {"finalized", "accepted"}:
+                completed_call = candidate
+                break
+    tx = completed_call or newest_call or tx
     tx_hash = tx.get("hash")
     rollup_hash = tx.get("rollup_transaction_hash")
     return {
