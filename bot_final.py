@@ -378,6 +378,11 @@ app = FastAPI(
 _X402_SERVER_ADDRESS = os.getenv("EVM_SERVER_ADDRESS", os.getenv("X402_SERVER_ADDRESS", ""))
 _X402_PRICE = "$0.10"
 _X402_FACILITATOR = os.getenv("X402_FACILITATOR_URL", "https://x402.org/facilitator")
+# User agent used for facilitator calls: hosted facilitators may sit behind a bot filter.
+X402_FACILITATOR_UA = os.getenv(
+    "X402_FACILITATOR_UA",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+)
 
 # Supported networks
 _X402_NETWORKS = {
@@ -424,9 +429,30 @@ _X402_PRICE_OVERRIDES = {
     },
 }
 
+def _x402_http_client():
+    """httpx client for the facilitator.
+
+    Some facilitators (Arcus) sit behind a bot filter that rejects the default
+    python user agent, and settlement can take minutes under RPC congestion,
+    so both the UA and the timeouts are set explicitly.
+    """
+    try:
+        import httpx
+
+        timeout = httpx.Timeout(float(os.getenv("X402_FACILITATOR_TIMEOUT", "180")), connect=15.0)
+        return httpx.AsyncClient(timeout=timeout, headers={"user-agent": X402_FACILITATOR_UA})
+    except Exception as _e:  # pragma: no cover
+        logging.getLogger(__name__).warning(f"x402: custom http client unavailable ({_e})")
+        return None
+
+
 if X402_ENABLED:
     try:
-        _x402_facilitator = HTTPFacilitatorClient(FacilitatorConfig(url=_X402_FACILITATOR))
+        _x402_facilitator = HTTPFacilitatorClient(FacilitatorConfig(
+            url=_X402_FACILITATOR,
+            timeout=float(os.getenv("X402_FACILITATOR_TIMEOUT", "180")),
+            http_client=_x402_http_client(),
+        ))
         _x402_srv = x402ResourceServer(_x402_facilitator)
 
         # Register exactly the networks the facilitator can verify and settle.
