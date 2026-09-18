@@ -409,6 +409,21 @@ _X402_FACILITATOR_NETWORKS = [
     _n.strip() for _n in os.getenv("X402_FACILITATOR_NETWORKS", "base_sepolia").split(",") if _n.strip()
 ]
 
+# The x402 SDK has no default stablecoin for Arc networks yet, so those networks
+# must be priced with an explicit asset (USDC ERC-20 interface, 6 decimals).
+_X402_PRICE_OVERRIDES = {
+    "arc_mainnet": {
+        "amount": "100000",
+        "asset": "0x3600000000000000000000000000000000000000",
+        "extra": {"name": "USDC", "version": "2"},
+    },
+    "arc_testnet": {
+        "amount": "100000",
+        "asset": "0x3600000000000000000000000000000000000000",
+        "extra": {"name": "USDC", "version": "2"},
+    },
+}
+
 if X402_ENABLED:
     try:
         _x402_facilitator = HTTPFacilitatorClient(FacilitatorConfig(url=_X402_FACILITATOR))
@@ -432,9 +447,16 @@ if X402_ENABLED:
                 except RuntimeError:
                     # already inside a running loop: trust the operator's list
                     _sup = None
-            _supported_nets = {
-                str(_k.get("network")) for _k in (_sup or []) if isinstance(_k, dict)
-            }
+            _kinds = getattr(_sup, "kinds", None)
+            if _kinds is None and isinstance(_sup, dict):
+                _kinds = _sup.get("kinds")
+            if _kinds is None and isinstance(_sup, (list, tuple)):
+                _kinds = _sup
+            _supported_nets = set()
+            for _k in (_kinds or []):
+                _net = _k.get("network") if isinstance(_k, dict) else getattr(_k, "network", None)
+                if _net:
+                    _supported_nets.add(str(_net))
             if _supported_nets:
                 _kept = [
                     _nk for _nk in _x402_facilitator_networks
@@ -468,7 +490,7 @@ if X402_ENABLED:
             _x402_payment_options.append(PaymentOption(
                 scheme="exact",
                 pay_to=_X402_SERVER_ADDRESS,
-                price=_X402_PRICE,
+                price=_X402_PRICE_OVERRIDES.get(_nk, _X402_PRICE),
                 network=_nv["evm_network"],
             ))
 
