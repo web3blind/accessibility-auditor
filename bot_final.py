@@ -403,15 +403,64 @@ _X402_NETWORKS = {
 _X402_ACTIVE = os.getenv("X402_NETWORK_KEY", "arc_testnet")
 _X402_NETWORK = _X402_NETWORKS[_X402_ACTIVE]["evm_network"]
 
+# Network keys advertised by the configured facilitator (comma separated).
+# Entries are validated against the facilitator /supported list at startup.
+_X402_FACILITATOR_NETWORKS = [
+    _n.strip() for _n in os.getenv("X402_FACILITATOR_NETWORKS", "base_sepolia").split(",") if _n.strip()
+]
+
 if X402_ENABLED:
     try:
         _x402_facilitator = HTTPFacilitatorClient(FacilitatorConfig(url=_X402_FACILITATOR))
         _x402_srv = x402ResourceServer(_x402_facilitator)
 
-        # Register networks supported by the facilitator
-        # NOTE: x402.org facilitator currently only supports Base Sepolia & Base Mainnet
-        # Arc Testnet support is pending — we track it in _X402_NETWORKS for info
-        _x402_facilitator_networks = ["base_sepolia"]  # Only register what facilitator supports
+        # Register exactly the networks the facilitator can verify and settle.
+        # X402_FACILITATOR_NETWORKS is the operator's intent; the facilitator's
+        # /supported list is the source of truth when it can be reached.
+        _x402_facilitator_networks = list(_X402_FACILITATOR_NETWORKS)
+        try:
+            import asyncio as _asyncio
+            import inspect as _inspect
+
+            async def _await_it(_v):
+                return await _v
+
+            _sup = _x402_facilitator.get_supported()
+            if _inspect.isawaitable(_sup):
+                try:
+                    _sup = _asyncio.run(_await_it(_sup))
+                except RuntimeError:
+                    # already inside a running loop: trust the operator's list
+                    _sup = None
+            _supported_nets = {
+                str(_k.get("network")) for _k in (_sup or []) if isinstance(_k, dict)
+            }
+            if _supported_nets:
+                _kept = [
+                    _nk for _nk in _x402_facilitator_networks
+                    if _X402_NETWORKS.get(_nk, {}).get("evm_network") in _supported_nets
+                ]
+                _dropped = sorted(set(_x402_facilitator_networks) - set(_kept))
+                if _dropped:
+                    logging.getLogger(__name__).warning(
+                        f"x402: facilitator {_X402_FACILITATOR} does not support {_dropped} — skipped"
+                    )
+                if _kept:
+                    _x402_facilitator_networks = _kept
+                else:
+                    logging.getLogger(__name__).error(
+                        "x402: none of the requested networks are supported by the facilitator; "
+                        f"requested={_x402_facilitator_networks}"
+                    )
+            else:
+                logging.getLogger(__name__).warning(
+                    "x402: facilitator /supported returned no networks; trusting X402_FACILITATOR_NETWORKS"
+                )
+        except Exception as _se:
+            logging.getLogger(__name__).warning(
+                f"x402: facilitator /supported probe failed ({_se}); trusting X402_FACILITATOR_NETWORKS"
+            )
+
         _x402_payment_options = []
         for _nk in _x402_facilitator_networks:
             _nv = _X402_NETWORKS[_nk]
@@ -423,17 +472,19 @@ if X402_ENABLED:
                 network=_nv["evm_network"],
             ))
 
+        _x402_offer_names = ", ".join(_X402_NETWORKS[_nk]["name"] for _nk in _x402_facilitator_networks)
         _x402_routes = {
             "POST /api/audit/paid": RouteConfig(
                 accepts=_x402_payment_options,
                 mime_type="application/json",
-                description="Accessibility audit (WCAG 2.1) — pay with USDC on Base Sepolia or Arc Testnet",
+                description=f"Accessibility audit (WCAG 2.1) — pay with USDC on {_x402_offer_names}",
             ),
         }
         app.add_middleware(PaymentMiddlewareASGI, routes=_x402_routes, server=_x402_srv)
         logging.getLogger(__name__).info(
             f"x402 enabled: address={_X402_SERVER_ADDRESS}, price={_X402_PRICE}, "
-            f"networks={list(_X402_NETWORKS.keys())}"
+            f"facilitator={_X402_FACILITATOR}, advertised={_x402_facilitator_networks}, "
+            f"active={_X402_ACTIVE}"
         )
     except Exception as _xe:
         X402_ENABLED = False
