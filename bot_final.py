@@ -393,6 +393,12 @@ _X402_NETWORKS = {
         "chain_id": 5042002,
         "usdc_is_native": True,
     },
+    "arc_mainnet": {
+        "name": "Arc Mainnet (Circle L1)",
+        "evm_network": "eip155:5042",
+        "chain_id": 5042,
+        "usdc_is_native": True,
+    },
 }
 _X402_ACTIVE = os.getenv("X402_NETWORK_KEY", "arc_testnet")
 _X402_NETWORK = _X402_NETWORKS[_X402_ACTIVE]["evm_network"]
@@ -964,10 +970,21 @@ async def x402_info():
         "active_network": _X402_ACTIVE,
         "escrow_mode": build_x402escrow_info(),
         "networks": networks_info,
-        # Backward-compatible legacy discovery fields kept for existing clients.
-        "erc8004_agent_id": 963,
-        "erc8004_registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+        # ERC-8004 identity: the primary registration now lives on Arc mainnet
+        # (agent #138); the Arc Testnet registration (#963) is kept as legacy
+        # reference for clients that still read the old fields.
+        "erc8004_agent_id": 138,
+        "erc8004_registry": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
         "agent_identity": {
+            "standard": "ERC-8004",
+            "network": "arc_mainnet",
+            "chain_id": 5042,
+            "agent_id": 138,
+            "identity_registry": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+            "agent_wallet": "0x6bF51D7A4afDE620cce48d73547C7A9B808b9DeD",
+            "explorer_url": "https://explorer.arc.io/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/instance/138",
+        },
+        "agent_identity_testnet": {
             "standard": "ERC-8004",
             "network": "arc_testnet",
             "chain_id": 5042002,
@@ -987,7 +1004,7 @@ async def x402_info():
             "fortytwo_x402escrow_metered_site_audit",
         ],
         "agentic_payment_pattern": {
-            "identity": "ERC-8004 registered accessibility audit agent on Arc Testnet",
+            "identity": "ERC-8004 registered accessibility audit agent on Arc mainnet (agent #138)",
             "settlement": "x402 pay-per-audit endpoint with USDC payment flow",
             "recommended_client_controls": [
                 "max_price_per_audit_usd",
