@@ -446,6 +446,50 @@ def _x402_http_client():
         return None
 
 
+class _X402DebugFacilitator:
+    """Diagnostics wrapper: logs what the facilitator answers for verify/settle.
+
+    Enabled with X402_FACILITATOR_DEBUG=1 so a failing payment can be explained
+    without guessing. Every other attribute is delegated to the real client.
+    """
+
+    def __init__(self, inner):
+        self._inner = inner
+        self._log = logging.getLogger(__name__)
+
+    async def verify(self, payment_payload, requirements):
+        try:
+            res = await self._inner.verify(payment_payload, requirements)
+        except Exception as exc:
+            self._log.warning(f"x402dbg verify raised {type(exc).__name__}: {exc}")
+            raise
+        self._log.info(f"x402dbg verify -> {_x402_dump(res)}")
+        return res
+
+    async def settle(self, payment_payload, requirements):
+        try:
+            res = await self._inner.settle(payment_payload, requirements)
+        except Exception as exc:
+            self._log.warning(f"x402dbg settle raised {type(exc).__name__}: {exc}")
+            raise
+        self._log.info(f"x402dbg settle -> {_x402_dump(res)}")
+        return res
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+def _x402_dump(obj) -> str:
+    try:
+        if hasattr(obj, "model_dump_json"):
+            return obj.model_dump_json()
+        if isinstance(obj, dict):
+            return json.dumps(obj, default=str)[:600]
+        return repr(obj)[:600]
+    except Exception:  # pragma: no cover
+        return repr(obj)[:600]
+
+
 if X402_ENABLED:
     try:
         _x402_facilitator = HTTPFacilitatorClient(FacilitatorConfig(
@@ -453,6 +497,8 @@ if X402_ENABLED:
             timeout=float(os.getenv("X402_FACILITATOR_TIMEOUT", "180")),
             http_client=_x402_http_client(),
         ))
+        if os.getenv("X402_FACILITATOR_DEBUG") == "1":
+            _x402_facilitator = _X402DebugFacilitator(_x402_facilitator)
         _x402_srv = x402ResourceServer(_x402_facilitator)
 
         # Register exactly the networks the facilitator can verify and settle.
