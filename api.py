@@ -38,7 +38,9 @@ try:
         get_network_config, NETWORKS, ACTIVE_NETWORK
     )
     X402_ENABLED = True
-    x402_facilitator = HTTPFacilitatorClient(FacilitatorConfig(url=FACILITATOR_URL))
+    from x402_facilitator_auth import facilitator_config
+
+    x402_facilitator = HTTPFacilitatorClient(facilitator_config(FACILITATOR_URL))
 
     from x402.server import x402ResourceServer
     x402_server = x402ResourceServer(x402_facilitator)
@@ -169,6 +171,8 @@ async def create_paid_audit(request: AuditRequest) -> dict:
     3. Client pays on their preferred network and retries with X-PAYMENT header
     4. Middleware verifies payment, server runs audit and returns full report
     """
+    if not X402_ENABLED:
+        raise HTTPException(status_code=503, detail="Payment service unavailable")
     if not request.url:
         raise HTTPException(status_code=400, detail="URL is required")
 

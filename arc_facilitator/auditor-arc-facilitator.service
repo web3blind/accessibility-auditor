@@ -1,0 +1,40 @@
+[Unit]
+Description=Auditor Arc x402 exact facilitator
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+# Create this unprivileged user first. systemd (root manager) reads EnvironmentFile.
+User=auditor-arc
+Group=auditor-arc
+WorkingDirectory=/www/wwwroot/hexdrive.tech/arc_facilitator
+EnvironmentFile=/root/.config/auditor-arc-facilitator.env
+Environment=HOME=/var/lib/auditor-arc-facilitator
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# Replace with aaPanel's actual absolute Node >=22 binary, verify before install.
+ExecStart=/usr/bin/node src/server.js
+StateDirectory=auditor-arc-facilitator
+StateDirectoryMode=0700
+UMask=0077
+Restart=always
+RestartSec=15
+TimeoutStopSec=180
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+LimitCORE=0
+LimitNOFILE=1024
+MemoryMax=256M
+TasksMax=32
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

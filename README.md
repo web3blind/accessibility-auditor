@@ -35,9 +35,9 @@ AI agents and developers can pay per audit via the [x402 protocol](https://x402.
 
 ```
 POST https://hexdrive.tech/api/audit/paid
-Payment: 0.10 USDC on Base Sepolia (testnet)
-Network: eip155:84532
-Facilitator: https://x402.org/facilitator
+Payment: 0.10 USDC on Arc mainnet
+Network: eip155:5042
+Facilitator: self-hosted private Arc relayer (source: arc_facilitator/)
 ```
 
 Discovery endpoint:
@@ -46,12 +46,74 @@ GET https://hexdrive.tech/api/x402/info
 ```
 
 The discovery response also describes the auditor as an ERC-8004 registered
-agent on Arc Testnet and exposes a simple pay-per-audit model for other agents.
+agent on Arc mainnet and exposes a simple pay-per-audit model for other agents.
 Client agents should treat the published price as a spending-policy input: check
 their maximum price per audit, remaining daily budget, and allowed target domains
 before submitting payment.
 
 Free audits are available via the web interface only (not via API).
+
+### Arc mainnet x402 and open-source facilitator
+
+The fixed-price API accepts **0.10 USDC on Arc mainnet** (`eip155:5042`).
+Our [self-hosted facilitator source](arc_facilitator/README.md) includes the
+server, official SDK integration, nonce/gas ledger, tests, sample configuration
+and explicit paid client. It is an off-chain relayer, not a custom Solidity
+contract: settlement calls the existing Arc USDC EIP-3009 interface.
+[Contract and SDK source references](arc_facilitator/README.md#source-and-on-chain-contract-provenance)
+and [verified production handoff](ARC_X402_DEPLOYMENT.md) are included.
+
+For this private loopback service, configure `X402_FACILITATOR_URL`,
+`X402_FACILITATOR_NETWORKS=arc_mainnet`, `X402_NETWORK_KEY=arc_mainnet` and
+`X402_PRIVATE_FACILITATOR_TOKEN` through the environment; no values of secrets
+are committed. The relayer has its own wallet. Mainnet and testnet both passed
+live paid tests; production offers mainnet only. The separate Base multi-page
+escrow remains unchanged.
+
+### Optional Circle facilitator authentication (server only)
+
+Circle is optional. Other facilitators need **neither** of the Circle
+credential variables below. Our private Arc facilitator uses its own Bearer token.
+Buyer payment offers and the fixed $0.10 audit price are unchanged.
+
+For Circle, configure `X402_FACILITATOR_URL` as
+`https://api.circle.com/v1/facilitator/x402` (production) or
+`https://api-sandbox.circle.com/v1/facilitator/x402` (sandbox). Set
+`X402_FACILITATOR_NETWORKS` to the intended network keys, for example
+`arc_testnet`; the primary server intersects them with `/supported` exact v2
+capabilities. An authoritative empty intersection disables paid audits (503),
+not payment enforcement. An unavailable capability probe retains the operator's
+list, which the SDK validates when initializing its middleware.
+
+Configure **exactly one** server-side secret through your environment manager:
+
+- `X402_CIRCLE_API_KEY`: Circle API key sent in the HTTP Authorization Bearer header.
+  This production mode needs no seller private key. Circle documents that a
+  settlement binds `payTo` to the Circle account and ends its keyless trial.
+- `X402_CIRCLE_SELLER_PRIVATE_KEY`: key controlling the payout EOA, for Circle's
+  keyless trial only. Each verify/settle request gets a fresh EIP-712
+  `Facilitator-Seller-Proof`, bound to its purpose, network, payTo and exact body
+  bytes, with a 5-minute expiry. ERC-1271 external signers are not implemented.
+
+Never set both modes; remove both when switching to a non-Circle facilitator.
+The adapter refuses to send credentials to non-official Circle URLs and does not
+follow redirects. Secrets/proofs are not added to discovery responses or offers.
+No secret values belong in source, browser chat, logs or tests. Invalid auth
+configuration disables the paid route rather than silently dropping auth.
+
+Circle returns `success: false` / `settlement_pending` when a transaction is
+unresolved. This adapter leaves that result unchanged; it does not implement
+status reconciliation or turn pending into success. Never retry with a newly
+signed buyer authorization after a timeout/pending response.
+
+Protocol references (checked against the actual SDK `x402==2.9.0`):
+[verify authentication](https://developers.circle.com/api-reference/facilitator-service/verify-payment),
+[seller proof](https://developers.circle.com/facilitator-service/sign-seller-proof),
+[keyless trial](https://developers.circle.com/facilitator-service/keyless-trial),
+[supported networks](https://developers.circle.com/facilitator-service/supported-networks).
+
+Local tests (mock HTTP transport; no paid/on-chain calls):
+` .venv/bin/python -m pytest -q tests/test_x402_facilitator_auth.py tests/test_agentkit_payment_controls.py `
 
 ### AgentKit Integration
 

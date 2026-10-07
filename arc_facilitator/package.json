@@ -1,0 +1,1 @@
+{"name":"arc-exact-facilitator","private":true,"version":"1.0.0","type":"module","engines":{"node":">=22"},"scripts":{"start":"node src/server.js","test":"node --test test/*.test.js","probe":"node src/probe.js"},"dependencies":{"@x402/core":"2.28.0","@x402/evm":"2.28.0","viem":"2.57.3","better-sqlite3":"12.6.2"}}

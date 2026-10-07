@@ -429,21 +429,15 @@ _X402_PRICE_OVERRIDES = {
     },
 }
 
-def _x402_http_client():
-    """httpx client for the facilitator.
+def _x402_facilitator_config():
+    """Preserve UA/timeouts; optionally authenticate official Circle requests."""
+    from x402_facilitator_auth import facilitator_config
 
-    Some facilitators (Arcus) sit behind a bot filter that rejects the default
-    python user agent, and settlement can take minutes under RPC congestion,
-    so both the UA and the timeouts are set explicitly.
-    """
-    try:
-        import httpx
-
-        timeout = httpx.Timeout(float(os.getenv("X402_FACILITATOR_TIMEOUT", "180")), connect=15.0)
-        return httpx.AsyncClient(timeout=timeout, headers={"user-agent": X402_FACILITATOR_UA})
-    except Exception as _e:  # pragma: no cover
-        logging.getLogger(__name__).warning(f"x402: custom http client unavailable ({_e})")
-        return None
+    return facilitator_config(
+        _X402_FACILITATOR,
+        user_agent=X402_FACILITATOR_UA,
+        timeout=float(os.getenv("X402_FACILITATOR_TIMEOUT", "180")),
+    )
 
 
 class _X402DebugFacilitator:
@@ -492,11 +486,7 @@ def _x402_dump(obj) -> str:
 
 if X402_ENABLED:
     try:
-        _x402_facilitator = HTTPFacilitatorClient(FacilitatorConfig(
-            url=_X402_FACILITATOR,
-            timeout=float(os.getenv("X402_FACILITATOR_TIMEOUT", "180")),
-            http_client=_x402_http_client(),
-        ))
+        _x402_facilitator = HTTPFacilitatorClient(_x402_facilitator_config())
         if os.getenv("X402_FACILITATOR_DEBUG") == "1":
             _x402_facilitator = _X402DebugFacilitator(_x402_facilitator)
         _x402_srv = x402ResourceServer(_x402_facilitator)
@@ -509,51 +499,29 @@ if X402_ENABLED:
             import asyncio as _asyncio
             import inspect as _inspect
 
-            async def _await_it(_v):
-                return await _v
+            async def _await_it(_value):
+                return await _value
 
             _sup = _x402_facilitator.get_supported()
             if _inspect.isawaitable(_sup):
-                try:
-                    _sup = _asyncio.run(_await_it(_sup))
-                except RuntimeError:
-                    # already inside a running loop: trust the operator's list
-                    _sup = None
-            _kinds = getattr(_sup, "kinds", None)
-            if _kinds is None and isinstance(_sup, dict):
-                _kinds = _sup.get("kinds")
-            if _kinds is None and isinstance(_sup, (list, tuple)):
-                _kinds = _sup
-            _supported_nets = set()
-            for _k in (_kinds or []):
-                _net = _k.get("network") if isinstance(_k, dict) else getattr(_k, "network", None)
-                if _net:
-                    _supported_nets.add(str(_net))
-            if _supported_nets:
-                _kept = [
-                    _nk for _nk in _x402_facilitator_networks
-                    if _X402_NETWORKS.get(_nk, {}).get("evm_network") in _supported_nets
-                ]
+                _sup = _asyncio.run(_await_it(_sup))
+            if _sup is not None:
+                from x402_facilitator_auth import supported_network_keys
+
+                _kept = supported_network_keys(_X402_NETWORKS, _x402_facilitator_networks, _sup)
                 _dropped = sorted(set(_x402_facilitator_networks) - set(_kept))
                 if _dropped:
                     logging.getLogger(__name__).warning(
-                        f"x402: facilitator {_X402_FACILITATOR} does not support {_dropped} — skipped"
+                        f"x402: facilitator {_X402_FACILITATOR} does not support exact v2 on {_dropped} — skipped"
                     )
-                if _kept:
-                    _x402_facilitator_networks = _kept
-                else:
-                    logging.getLogger(__name__).error(
-                        "x402: none of the requested networks are supported by the facilitator; "
-                        f"requested={_x402_facilitator_networks}"
-                    )
-            else:
-                logging.getLogger(__name__).warning(
-                    "x402: facilitator /supported returned no networks; trusting X402_FACILITATOR_NETWORKS"
-                )
+                _x402_facilitator_networks = _kept
         except Exception as _se:
             logging.getLogger(__name__).warning(
                 f"x402: facilitator /supported probe failed ({_se}); trusting X402_FACILITATOR_NETWORKS"
             )
+
+        if not _x402_facilitator_networks:
+            raise ValueError("Facilitator supports none of the requested exact v2 networks")
 
         _x402_payment_options = []
         for _nk in _x402_facilitator_networks:
@@ -1062,6 +1030,8 @@ async def submit_paid_audit(request: AuditRequest):
     x402 middleware intercepts this route — client must pay before getting response.
     On successful payment, runs full audit and returns JSON report.
     """
+    if not X402_ENABLED:
+        return JSONResponse({"error": "Payment service unavailable"}, status_code=503)
     url = request.url.strip()
     if not is_valid_url(url):
         return JSONResponse({"error": "Invalid URL format"}, status_code=400)

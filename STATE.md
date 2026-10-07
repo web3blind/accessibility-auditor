@@ -48,10 +48,12 @@ Last updated: 2026-03-26
   View: https://www.base.org/name/a11y-auditor
 
 ## x402 Integration
+- Current verified deployment: see `ARC_X402_DEPLOYMENT.md` (2026-10-07).
 - Paid endpoint: POST https://hexdrive.tech/api/audit/paid
-- Price: 0.10 USDC on Base Sepolia (eip155:84532)
-- Facilitator: https://x402.org/facilitator
+- Price: 0.10 USDC on Arc mainnet (eip155:5042). Testnet is not offered in production.
+- Facilitator: private self-hosted Arc service on localhost:3402, dedicated wallet, authenticated verify/settle.
 - Discovery: GET https://hexdrive.tech/api/x402/info
+- Existing Base multi-page escrow remains separate and unchanged.
 - Free endpoint: POST https://hexdrive.tech/api/audit (Referer: hexdrive.tech required)
 
 ## OpenServ Integration
